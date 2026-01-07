@@ -1,0 +1,11 @@
+{
+  "cameras": [
+    {
+      "id": "cam-1",
+      "name": "DroidCam",
+      "url": "http://10.109.110.123:4747/video",
+      "zone": "Main Plaza",
+      "enabled": true
+    }
+  ]
+}
