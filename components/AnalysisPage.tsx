@@ -311,7 +311,7 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                             {hourlyData.map((data, index) => (
                                 <div key={index} className="flex-1 flex flex-col items-center gap-2">
                                     <div
-                                        className="w-full bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-t-sm transition-all duration-500 hover:from-cyan-500 hover:to-cyan-300"
+                                        className="w-full bg-linear-to-t from-cyan-600 to-cyan-400 rounded-t-sm transition-all duration-500 hover:from-cyan-500 hover:to-cyan-300"
                                         style={{ height: `${(data.count / maxHourlyCount) * 100}%` }}
                                         title={`${data.count} visitors`}
                                     ></div>
@@ -411,21 +411,21 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                             AI Predictions
                         </h3>
                         <div className="space-y-3">
-                            <div className="p-4 bg-gradient-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/20">
+                            <div className="p-4 bg-linear-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/20">
                                 <div className="flex items-center gap-3 mb-2">
                                     <AlertTriangle className="w-5 h-5 text-yellow-400" />
                                     <span className="text-sm font-medium text-yellow-400">Expected Peak in 2 hours</span>
                                 </div>
                                 <p className="text-xs text-gray-400">Based on historical data, crowd density is expected to reach 85% by 16:00. Consider deploying additional staff to Entry Gate and Main Plaza.</p>
                             </div>
-                            <div className="p-4 bg-gradient-to-r from-cyan-500/10 to-transparent rounded-lg border border-cyan-500/20">
+                            <div className="p-4 bg-linear-to-r from-cyan-500/10 to-transparent rounded-lg border border-cyan-500/20">
                                 <div className="flex items-center gap-3 mb-2">
                                     <TrendingUp className="w-5 h-5 text-cyan-400" />
                                     <span className="text-sm font-medium text-cyan-400">Visitor Surge Predicted</span>
                                 </div>
                                 <p className="text-xs text-gray-400">Weather conditions favorable. Expected 15% increase in visitors compared to last week&apos;s average.</p>
                             </div>
-                            <div className="p-4 bg-gradient-to-r from-emerald-500/10 to-transparent rounded-lg border border-emerald-500/20">
+                            <div className="p-4 bg-linear-to-r from-emerald-500/10 to-transparent rounded-lg border border-emerald-500/20">
                                 <div className="flex items-center gap-3 mb-2">
                                     <Target className="w-5 h-5 text-emerald-400" />
                                     <span className="text-sm font-medium text-emerald-400">Optimal Staffing Recommendation</span>
@@ -442,7 +442,7 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                             Anomaly Detection
                         </h3>
                         <div className="space-y-3">
-                            <div className="p-4 bg-gradient-to-r from-red-500/10 to-transparent rounded-lg border border-red-500/20">
+                            <div className="p-4 bg-linear-to-r from-red-500/10 to-transparent rounded-lg border border-red-500/20">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-medium text-red-400">Unusual Gathering - Zone B</span>
                                     <span className="text-xs text-gray-500">12:34 PM</span>
@@ -453,7 +453,7 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                                     <span className="px-2 py-1 bg-gray-700 text-gray-400 text-xs rounded">Auto-Alert Sent</span>
                                 </div>
                             </div>
-                            <div className="p-4 bg-gradient-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/20">
+                            <div className="p-4 bg-linear-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/20">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-medium text-yellow-400">Flow Disruption - Entry Gate</span>
                                     <span className="text-xs text-gray-500">11:15 AM</span>
@@ -464,7 +464,7 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                                     <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Resolved</span>
                                 </div>
                             </div>
-                            <div className="p-4 bg-gradient-to-r from-purple-500/10 to-transparent rounded-lg border border-purple-500/20">
+                            <div className="p-4 bg-linear-to-r from-purple-500/10 to-transparent rounded-lg border border-purple-500/20">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-medium text-purple-400">Unusual Movement Pattern</span>
                                     <span className="text-xs text-gray-500">10:45 AM</span>

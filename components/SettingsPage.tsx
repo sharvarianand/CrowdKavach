@@ -26,9 +26,8 @@ import {
     Video,
     Plus,
     Trash2,
-    Edit2,
-    X,
-    RefreshCw
+    RefreshCw,
+    X
 } from 'lucide-react';
 import EmergencyButton from './EmergencyButton';
 import { AppUser, Camera } from '@/lib/types';
@@ -76,28 +75,12 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
     const [cameras, setCameras] = useState<Camera[]>([]);
     const [showAddCamera, setShowAddCamera] = useState(false);
     const [newCamera, setNewCamera] = useState<NewCameraForm>(defaultNewCamera);
-    const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
     const [cameraLoading, setCameraLoading] = useState(false);
 
     const currentDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
     const baseUrl = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || 'http://localhost:8000';
 
-    // Load settings from localStorage
-    useEffect(() => {
-        const savedSettings = localStorage.getItem('crowdkavach_settings');
-        if (savedSettings) {
-            try {
-                setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
-            } catch (_e) {
-                console.error('Failed to parse settings');
-            }
-        }
-
-        // Fetch cameras from backend
-        fetchCameras();
-    }, []);
-
-    // Fetch cameras
+    // Fetch cameras function - defined before use
     const fetchCameras = async () => {
         try {
             const response = await fetch(`${baseUrl}/cameras`);
@@ -109,6 +92,22 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
             console.error('Failed to fetch cameras:', err);
         }
     };
+
+    // Load settings from localStorage
+    useEffect(() => {
+        const savedSettings = localStorage.getItem('crowdkavach_settings');
+        if (savedSettings) {
+            try {
+                setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
+            } catch {
+                console.error('Failed to parse settings');
+            }
+        }
+
+        // Fetch cameras from backend
+        fetchCameras();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Update time
     useEffect(() => {
@@ -634,7 +633,7 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
 
                         {/* Bandwidth Comparison */}
                         {settings.lowBandwidthMode && (
-                            <div className="bg-gradient-to-r from-amber-500/10 to-transparent rounded-xl p-6 border border-amber-500/30">
+                            <div className="bg-linear-to-r from-amber-500/10 to-transparent rounded-xl p-6 border border-amber-500/30">
                                 <h3 className="text-lg font-bold text-amber-400 mb-4">Low Bandwidth Mode Active</h3>
                                 <div className="grid grid-cols-2 gap-6">
                                     <div className="bg-[#0f1729]/50 rounded-lg p-4">

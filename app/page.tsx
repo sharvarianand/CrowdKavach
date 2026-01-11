@@ -1,142 +1,180 @@
-import Link from "next/link";
-import { Shield, Activity, Eye, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
+'use client';
 
-export default function Home() {
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Users, Activity, BarChart3, Bell, Camera, ArrowRight, CheckCircle, Zap, Lock, Sun, Moon, Shield } from 'lucide-react';
+import { useTheme } from '@/lib/ThemeContext';
+import Logo from '@/components/Logo';
+
+export default function LandingPage() {
+  const router = useRouter();
+  const [isHovered, setIsHovered] = useState(false);
+  const { theme, toggleTheme } = useTheme();
+
+  const features = [
+    { icon: Camera, title: 'Live Monitoring', desc: 'Real-time crowd surveillance with AI-powered detection' },
+    { icon: Users, title: 'People Counting', desc: 'Accurate headcount tracking across multiple zones' },
+    { icon: Activity, title: 'Density Analysis', desc: 'Monitor crowd density and flow patterns instantly' },
+    { icon: Bell, title: 'Smart Alerts', desc: 'Instant notifications when safety thresholds are reached' },
+    { icon: BarChart3, title: 'Analytics', desc: 'Comprehensive reports and actionable insights' },
+    { icon: Shield, title: 'Safety First', desc: 'Proactive emergency management and response' },
+  ];
+
+  const stats = [
+    { value: '99.9%', label: 'Detection Accuracy' },
+    { value: '<100ms', label: 'Response Time' },
+    { value: '24/7', label: 'Monitoring' },
+    { value: '1000+', label: 'People Tracked' },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#050b14] text-white font-sans selection:bg-cyan-500/30 overflow-x-hidden">
-      {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 bg-[#0a101f]/80 backdrop-blur-md border-b border-cyan-900/30">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Shield className="w-8 h-8 text-cyan-400 fill-cyan-950" />
-              <div className="absolute inset-0 bg-cyan-400/20 blur-xl rounded-full"></div>
-            </div>
-            <span className="text-xl font-bold tracking-wider text-white">
-              CROWD<span className="text-cyan-400">KAVACH</span>
-            </span>
-          </div>
-
+    <div className="min-h-screen bg-white dark:bg-zinc-900 transition-colors duration-200">
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-100 dark:border-zinc-800 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Logo size="md" />
           <div className="hidden md:flex items-center gap-8">
-            <a href="/api/auth/login" className="px-5 py-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-500/60 transition-all duration-300 backdrop-blur-sm">
-              Login
-            </a>
+            <a href="#features" className="text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors font-medium">Features</a>
+            <a href="#stats" className="text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors font-medium">Stats</a>
+            <a href="#about" className="text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors font-medium">About</a>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={toggleTheme}
+              className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <button 
+              onClick={() => router.push('/dashboard')}
+              className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium shadow-sm"
+            >
+              Open Dashboard
+            </button>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 px-6">
-        {/* Background Effects */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-250 h-150 bg-cyan-500/10 rounded-full blur-[100px] opacity-50"></div>
-          <div className="absolute top-[20%] right-[10%] w-125 h-125 bg-purple-500/10 rounded-full blur-[100px] opacity-30"></div>
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.03)_1px,transparent_1px)] bg-size-[60px_60px] opacity-20"></div>
-        </div>
-
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
-          <div className="space-y-8">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-900/30 border border-cyan-500/30 text-cyan-400 text-xs font-mono tracking-wide">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              SYSTEM OPERATIONAL
-            </div>
-
-            <h1 className="text-5xl lg:text-7xl font-bold tracking-tight leading-tight">
-              <span className="text-transparent bg-clip-text bg-linear-to-r from-white to-slate-400">Advanced Crowd</span>
-              <br />
-              <span className="text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.3)]">Safety Intelligence</span>
-            </h1>
-
-            <p className="text-lg text-slate-400 max-w-xl leading-relaxed">
-              CrowdKavach deploys next-generation computer vision to provide real-time crowd analytics, anomaly detection, and automated safety protocols for public spaces.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
-              <a href="/api/auth/login" className="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-lg transition-all duration-300 shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] flex items-center justify-center gap-2 group">
-                Launch Console
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </a>
-            </div>
-
-            <div className="pt-8 flex items-center gap-6 text-sm text-slate-500 font-mono">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span>Low Latency</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span>99.9% Uptime</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span>GDPR Compliant</span>
-              </div>
-            </div>
+      <section className="pt-32 pb-20 px-6 bg-linear-to-b from-zinc-50 dark:from-zinc-800 to-white dark:to-zinc-900 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-700 dark:text-emerald-400 text-sm font-medium mb-6 border border-emerald-100 dark:border-emerald-800">
+            <CheckCircle className="w-4 h-4" />
+            AI-Powered Safety Solution
           </div>
+          <h1 className="text-5xl md:text-6xl font-bold text-zinc-900 dark:text-zinc-100 mb-6 leading-tight">
+            Intelligent Crowd
+            <span className="text-emerald-600 dark:text-emerald-400"> Monitoring</span>
+          </h1>
+          <p className="text-xl text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+            Advanced AI-powered crowd detection and safety management system. 
+            Monitor, analyze, and protect your spaces in real-time.
+          </p>
+          <div className="flex items-center justify-center gap-4">
+            <button
+              onClick={() => router.push('/dashboard')}
+              onMouseEnter={() => setIsHovered(true)}
+              onMouseLeave={() => setIsHovered(false)}
+              className="group px-8 py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all font-semibold text-lg shadow-lg shadow-emerald-600/20 flex items-center gap-2"
+            >
+              Get Started
+              <ArrowRight className={`w-5 h-5 transition-transform ${isHovered ? 'translate-x-1' : ''}`} />
+            </button>
+            <button 
+              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
+              className="px-8 py-4 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all font-semibold text-lg border border-zinc-200 dark:border-zinc-700"
+            >
+              Learn More
+            </button>
+          </div>
+        </div>
+      </section>
 
-          {/* Hero Visual */}
-          <div className="relative lg:h-150 flex items-center justify-center">
-            <div className="relative w-full aspect-square max-w-125">
-              {/* Abstract HUD Circles */}
-              <div className="absolute inset-0 border border-cyan-500/20 rounded-full animate-[spin_10s_linear_infinite]"></div>
-              <div className="absolute inset-4 border border-cyan-500/10 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
-              <div className="absolute inset-12 border border-purple-500/20 rounded-full animate-[spin_20s_linear_infinite]"></div>
-
-              {/* Floating Cards */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="relative w-64 h-80 bg-[#0f1729]/90 backdrop-blur-xl border border-cyan-500/30 rounded-xl p-4 shadow-2xl skew-y-6 animate-float">
-                  <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
-                    <Shield className="w-5 h-5 text-cyan-400" />
-                    <span className="text-[10px] text-emerald-500 font-mono">SECURE</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="h-24 bg-cyan-900/20 rounded border border-cyan-500/20 relative overflow-hidden">
-                      <div className="absolute bottom-0 left-0 w-full h-full bg-linear-to-t from-cyan-500/20 to-transparent"></div>
-                    </div>
-                    <div className="h-2 w-3/4 bg-slate-700/50 rounded"></div>
-                    <div className="h-2 w-1/2 bg-slate-700/50 rounded"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="absolute top-1/2 right-0 -translate-y-1/2 w-48 h-32 bg-[#0a101f]/90 backdrop-blur-md border border-purple-500/30 rounded-lg p-3 shadow-xl -skew-y-3 translate-x-12 animate-float-delayed">
-                <div className="flex items-center gap-2 mb-2">
-                  <Activity className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs text-slate-300">Activity Spike</span>
-                </div>
-                <div className="text-2xl font-mono text-white">98.4%</div>
-                <div className="text-[10px] text-slate-400">Confidence Score</div>
-              </div>
-            </div>
+      {/* Trust Indicators */}
+      <section className="py-12 px-6 border-y border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-center gap-12 text-zinc-400 dark:text-zinc-500">
+          <div className="flex items-center gap-2">
+            <Lock className="w-5 h-5" />
+            <span className="font-medium">Enterprise Security</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5" />
+            <span className="font-medium">Real-time Processing</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5" />
+            <span className="font-medium">Privacy Compliant</span>
           </div>
         </div>
       </section>
 
       {/* Features Grid */}
-      <section className="py-20 bg-[#0a101f]/50 border-t border-cyan-900/20">
-        <div className="max-w-7xl mx-auto px-6">
+      <section id="features" className="py-24 px-6 bg-white dark:bg-zinc-900 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-white mb-4">Tactical Capabilities</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">Engineered for high-density environments requiring immediate situational awareness.</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">Powerful Features</h2>
+            <p className="text-zinc-600 dark:text-zinc-400 max-w-xl mx-auto text-lg">Everything you need for comprehensive crowd safety management</p>
           </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { icon: Eye, title: "Computer Vision", desc: "Real-time object detection and tracking with multi-camera re-identification support." },
-              { icon: Activity, title: "Crowd Analytics", desc: "Predictive modeling for density estimation and flow pattern analysis." },
-              { icon: Lock, title: "Secure Infrastructure", desc: "End-to-end encrypted video pipelines with zero-trust architecture." }
-            ].map((feature, i) => (
-              <div key={i} className="p-6 rounded-xl bg-[#0f1729] border border-cyan-900/30 hover:border-cyan-500/50 transition-colors group">
-                <div className="w-12 h-12 rounded-lg bg-cyan-900/20 border border-cyan-500/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <feature.icon className="w-6 h-6 text-cyan-400" />
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {features.map((feature, idx) => (
+              <div
+                key={idx}
+                className="p-6 bg-white dark:bg-zinc-800 rounded-2xl hover:shadow-lg dark:hover:shadow-zinc-900/50 transition-all group cursor-pointer border border-zinc-100 dark:border-zinc-700 hover:border-emerald-200 dark:hover:border-emerald-700"
+              >
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 group-hover:bg-emerald-600 transition-colors flex items-center justify-center mb-4">
+                  <feature.icon className="w-6 h-6 text-emerald-600 dark:text-emerald-400 group-hover:text-white transition-colors" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{feature.desc}</p>
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">{feature.title}</h3>
+                <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">{feature.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
+
+      {/* Stats Section */}
+      <section id="stats" className="py-24 px-6 bg-emerald-600">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid md:grid-cols-4 gap-8 text-center">
+            {stats.map((stat, idx) => (
+              <div key={idx} className="p-6">
+                <div className="text-4xl md:text-5xl font-bold text-white mb-2">{stat.value}</div>
+                <div className="text-emerald-100 font-medium">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section id="about" className="py-24 px-6 bg-zinc-50 dark:bg-zinc-800/50 transition-colors duration-200">
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 dark:text-zinc-100 mb-6">Ready to enhance your crowd safety?</h2>
+          <p className="text-zinc-600 dark:text-zinc-400 text-lg mb-10 leading-relaxed">
+            Join organizations that trust CrowdKavach for their crowd monitoring and safety management needs.
+          </p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="px-10 py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all font-semibold text-lg shadow-lg shadow-emerald-600/20"
+          >
+            Start Monitoring Now
+          </button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 px-6 bg-zinc-900 border-t border-zinc-800">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          <Logo size="sm" variant="light" />
+          <div className="flex items-center gap-8 text-zinc-400">
+            <a href="/privacy" className="hover:text-white transition-colors">Privacy</a>
+            <a href="/terms" className="hover:text-white transition-colors">Terms</a>
+            <a href="/contact" className="hover:text-white transition-colors">Contact</a>
+          </div>
+          <p className="text-sm text-zinc-500">© 2026 CrowdKavach. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   );
 }

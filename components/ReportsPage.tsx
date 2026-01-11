@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import {
     Shield,
@@ -17,9 +17,7 @@ import {
     Filter,
     Calendar,
     Clock,
-    AlertTriangle,
     CheckCircle,
-    XCircle,
     Eye,
     Printer,
     Search,
@@ -65,12 +63,9 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('en-US', { hour12: false }));
     const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-    const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
     const [filterType, setFilterType] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
     const [filterStatus, setFilterStatus] = useState<'all' | 'resolved' | 'pending' | 'investigating'>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const [incidents, setIncidents] = useState<Incident[]>([]);
-    const [dailyReport, setDailyReport] = useState<DailyReport | null>(null);
     const [expandedIncident, setExpandedIncident] = useState<string | null>(null);
     const [showIncidentModal, setShowIncidentModal] = useState(false);
     const [incidentToPrint, setIncidentToPrint] = useState<Incident | null>(null);
@@ -86,64 +81,68 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
         return () => clearInterval(timer);
     }, []);
 
-    // Generate mock incidents
-    useEffect(() => {
+    // Generate mock incidents using useMemo
+    const incidents = useMemo(() => {
         const categories = ['Overcrowding', 'Stampede Risk', 'Medical Emergency', 'Security Breach', 'Fire Hazard', 'Unattended Object', 'Blocked Exit', 'VIP Incident'];
         const zones = ['Main Plaza', 'Entry Gate', 'Exit Gate', 'Food Court', 'Stage Area', 'Parking', 'VIP Area'];
         const responderNames = ['Officer Singh', 'Officer Patel', 'Officer Kumar', 'Officer Sharma', 'Medical Team A', 'Security Team B'];
         const statuses: Array<'resolved' | 'pending' | 'investigating'> = ['resolved', 'pending', 'investigating'];
         const types: Array<'critical' | 'warning' | 'info'> = ['critical', 'warning', 'info'];
 
-        const generateIncidents = (): Incident[] => {
-            return Array.from({ length: 15 }, (_, i) => {
-                const type = types[Math.floor(Math.random() * types.length)];
-                const category = categories[Math.floor(Math.random() * categories.length)];
-                const zone = zones[Math.floor(Math.random() * zones.length)];
-                const status = statuses[Math.floor(Math.random() * statuses.length)];
-                const hour = Math.floor(Math.random() * 14) + 6;
-                const minute = Math.floor(Math.random() * 60);
-
-                return {
-                    id: `INC-${String(i + 1).padStart(4, '0')}`,
-                    timestamp: new Date(2026, 0, 4, hour, minute),
-                    type,
-                    category,
-                    title: `${category} in ${zone}`,
-                    description: `${type === 'critical' ? 'URGENT: ' : ''}${category} detected in ${zone}. ${type === 'critical'
-                        ? 'Immediate action required. Crowd density exceeded safe threshold.'
-                        : type === 'warning'
-                            ? 'Situation requires monitoring. Staff alerted.'
-                            : 'Routine update. No immediate action needed.'
-                        }`,
-                    zone,
-                    status,
-                    responders: Array.from({ length: Math.floor(Math.random() * 3) + 1 }, () =>
-                        responderNames[Math.floor(Math.random() * responderNames.length)]
-                    ),
-                    duration: Math.floor(Math.random() * 45) + 5,
-                    crowdCount: Math.floor(Math.random() * 200) + 50,
-                    cameraId: `CAM-${String(Math.floor(Math.random() * 20) + 1).padStart(2, '0')}`,
-                    actions: [
-                        'Alert dispatched to security',
-                        status === 'resolved' ? 'Situation resolved' : 'Monitoring in progress',
-                        type === 'critical' ? 'Emergency protocol activated' : 'Standard protocol followed'
-                    ]
-                };
-            }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        // Use selectedDate as seed for consistent results per date
+        const seed = selectedDate.split('-').reduce((acc, val) => acc + parseInt(val), 0);
+        const seededRandom = (index: number) => {
+            const x = Math.sin(seed + index) * 10000;
+            return x - Math.floor(x);
         };
 
-        setIncidents(generateIncidents());
-        setDailyReport({
-            date: new Date(),
-            totalIncidents: 15,
-            critical: 3,
-            warnings: 7,
-            info: 5,
-            avgResponseTime: 4.5,
-            peakCrowdDensity: 78,
-            totalVisitors: 12450
-        });
+        return Array.from({ length: 15 }, (_, i) => {
+            const type = types[Math.floor(seededRandom(i * 7) * types.length)];
+            const category = categories[Math.floor(seededRandom(i * 7 + 1) * categories.length)];
+            const zone = zones[Math.floor(seededRandom(i * 7 + 2) * zones.length)];
+            const status = statuses[Math.floor(seededRandom(i * 7 + 3) * statuses.length)];
+            const hour = Math.floor(seededRandom(i * 7 + 4) * 14) + 6;
+            const minute = Math.floor(seededRandom(i * 7 + 5) * 60);
+
+            return {
+                id: `INC-${String(i + 1).padStart(4, '0')}`,
+                timestamp: new Date(2026, 0, 4, hour, minute),
+                type,
+                category,
+                title: `${category} in ${zone}`,
+                description: `${type === 'critical' ? 'URGENT: ' : ''}${category} detected in ${zone}. ${type === 'critical'
+                    ? 'Immediate action required. Crowd density exceeded safe threshold.'
+                    : type === 'warning'
+                        ? 'Situation requires monitoring. Staff alerted.'
+                        : 'Routine update. No immediate action needed.'
+                    }`,
+                zone,
+                status,
+                responders: Array.from({ length: Math.floor(seededRandom(i * 7 + 6) * 3) + 1 }, (_, j) =>
+                    responderNames[Math.floor(seededRandom(i * 100 + j) * responderNames.length)]
+                ),
+                duration: Math.floor(seededRandom(i * 11) * 45) + 5,
+                crowdCount: Math.floor(seededRandom(i * 13) * 200) + 50,
+                cameraId: `CAM-${String(Math.floor(seededRandom(i * 17) * 20) + 1).padStart(2, '0')}`,
+                actions: [
+                    'Alert dispatched to security',
+                    status === 'resolved' ? 'Situation resolved' : 'Monitoring in progress',
+                    type === 'critical' ? 'Emergency protocol activated' : 'Standard protocol followed'
+                ]
+            };
+        }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     }, [selectedDate]);
+
+    const dailyReport = useMemo<DailyReport>(() => ({
+        date: new Date(),
+        totalIncidents: 15,
+        critical: 3,
+        warnings: 7,
+        info: 5,
+        avgResponseTime: 4.5,
+        peakCrowdDensity: 78,
+        totalVisitors: 12450
+    }), []);
 
     const filteredIncidents = incidents.filter(incident => {
         if (filterType !== 'all' && incident.type !== filterType) return false;
@@ -358,7 +357,7 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
                     {/* Filters */}
                     <div className="col-span-12 flex items-center gap-4 flex-wrap">
                         {/* Search */}
-                        <div className="relative flex-1 min-w-[200px] max-w-md">
+                        <div className="relative flex-1 min-w-50 max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                             <input
                                 type="text"
@@ -532,7 +531,7 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
 
             {/* Individual Incident Report Modal */}
             {showIncidentModal && incidentToPrint && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] print:bg-white print:static">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-100 print:bg-white print:static">
                     <div className="bg-white text-black rounded-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-auto print:max-w-none print:max-h-none print:overflow-visible print:mx-0 print:rounded-none" ref={printRef}>
                         {/* Modal Header - Hidden in print */}
                         <div className="flex items-center justify-between p-4 border-b print:hidden">
@@ -652,7 +651,7 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
                                 <ul className="space-y-2">
                                     {incidentToPrint.actions.map((action, i) => (
                                         <li key={i} className="flex items-start gap-2">
-                                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
                                             <span className="text-gray-700">{action}</span>
                                         </li>
                                     ))}

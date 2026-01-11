@@ -23,16 +23,23 @@ interface LowBandwidthViewProps {
 
 export default function LowBandwidthView({ className = '', isPaused = false }: LowBandwidthViewProps) {
     const [data, setData] = useState<CoordinateData>({
-        timestamp: Date.now(),
+        timestamp: 0,
         people: [],
         count: 0,
         density: 0
     });
     const [isConnected, setIsConnected] = useState(false);
+    const [displayTime, setDisplayTime] = useState<string>('--:--:--');
+    const [isMounted, setIsMounted] = useState(false);
+
+    // Set mounted state to avoid hydration mismatch
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Fetch coordinates from server
     useEffect(() => {
-        if (isPaused) return;
+        if (isPaused || !isMounted) return;
 
         const fetchCoordinates = async () => {
             try {
@@ -41,48 +48,45 @@ export default function LowBandwidthView({ className = '', isPaused = false }: L
                 );
                 if (response.ok) {
                     const result = await response.json();
-                    console.log('Coordinates received:', result); // Debug log
                     setData({
                         timestamp: result.timestamp,
                         people: result.people || [],
                         count: result.people?.length || 0,
                         density: result.density || 0
                     });
+                    setDisplayTime(new Date(result.timestamp).toLocaleTimeString());
                     setIsConnected(true);
                 } else {
                     throw new Error('Server error');
                 }
             } catch (error) {
-                console.log('Coordinates fetch error:', error); // Debug log
+                console.log('Coordinates fetch error:', error);
                 setIsConnected(false);
-                setData(prev => ({
-                    ...prev,
-                    timestamp: Date.now(),
-                }));
+                setDisplayTime(new Date().toLocaleTimeString());
             }
         };
 
         fetchCoordinates();
         const interval = setInterval(fetchCoordinates, 500);
         return () => clearInterval(interval);
-    }, [isPaused]);
+    }, [isPaused, isMounted]);
 
-    // Get density color
+    // Get density color - updated for enterprise theme
     const getDensityColor = (density: number) => {
-        if (density > 70) return 'text-red-400';
-        if (density > 40) return 'text-yellow-400';
-        return 'text-green-400';
+        if (density > 70) return 'text-red-600';
+        if (density > 40) return 'text-amber-600';
+        return 'text-emerald-600';
     };
 
     return (
-        <div className={`relative bg-[#0a0a0a] overflow-hidden ${className}`} style={{ minHeight: '300px' }}>
-            {/* Camera Frame Simulation - Dark background */}
-            <div className="absolute inset-0 bg-gradient-to-b from-[#0a1520] to-[#050a10]">
+        <div className={`relative bg-white overflow-hidden rounded-xl border border-zinc-200 ${className}`} style={{ minHeight: '300px' }}>
+            {/* Camera Frame Simulation - Light background */}
+            <div className="absolute inset-0 bg-linear-to-b from-zinc-50 to-white">
                 {/* Subtle grid overlay */}
                 <div 
-                    className="absolute inset-0 opacity-10"
+                    className="absolute inset-0 opacity-20"
                     style={{
-                        backgroundImage: 'linear-gradient(rgba(6,182,212,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.5) 1px, transparent 1px)',
+                        backgroundImage: 'linear-gradient(rgba(5,150,105,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(5,150,105,0.4) 1px, transparent 1px)',
                         backgroundSize: '40px 40px'
                     }}
                 />
@@ -90,34 +94,34 @@ export default function LowBandwidthView({ className = '', isPaused = false }: L
 
             {/* Header Badge */}
             <div className="absolute top-3 left-3 z-30 flex items-center gap-2">
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
-                    isConnected ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                    isConnected ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-red-50 text-red-700 border border-red-200'
                 }`}>
                     <WifiOff className="w-3 h-3" />
                     LOW BANDWIDTH
                 </div>
                 {isConnected && (
-                    <div className="flex items-center gap-1 px-2 py-1 bg-green-500/20 rounded-full border border-green-500/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                        <span className="text-[10px] text-green-400 font-bold">LIVE</span>
+                    <div className="flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-full border border-emerald-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                        <span className="text-[10px] text-emerald-700 font-semibold">LIVE</span>
                     </div>
                 )}
             </div>
 
             {/* Stats Overlay */}
             <div className="absolute top-3 right-3 z-30 flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1729]/90 rounded-lg border border-cyan-900/30">
-                    <Users className="w-4 h-4 text-cyan-400" />
-                    <span className="text-sm font-bold text-white">{data.people.length}</span>
-                    <span className="text-[10px] text-gray-500">detected</span>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-zinc-200 shadow-sm">
+                    <Users className="w-4 h-4 text-emerald-600" />
+                    <span className="text-sm font-semibold text-zinc-900">{data.people.length}</span>
+                    <span className="text-[10px] text-zinc-500">detected</span>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1729]/90 rounded-lg border border-cyan-900/30">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-zinc-200 shadow-sm">
                     <Activity className={`w-4 h-4 ${getDensityColor(data.density)}`} />
-                    <span className={`text-sm font-bold ${getDensityColor(data.density)}`}>{data.density}%</span>
+                    <span className={`text-sm font-semibold ${getDensityColor(data.density)}`}>{data.density}%</span>
                 </div>
             </div>
 
-            {/* People Dots - Using absolute positioning with percentage */}
+            {/* People Dots - Emerald-600 theme */}
             <div className="absolute inset-0 z-20 pointer-events-none">
                 {data.people.map((person) => (
                     <div
@@ -132,13 +136,13 @@ export default function LowBandwidthView({ className = '', isPaused = false }: L
                     >
                         {/* Outer pulse ring */}
                         <div 
-                            className="absolute w-12 h-12 rounded-full bg-cyan-400/20 animate-ping"
+                            className="absolute w-12 h-12 rounded-full bg-emerald-600/15 animate-ping"
                             style={{ animationDuration: '1.5s' }}
                         />
                         {/* Middle glow */}
-                        <div className="absolute w-6 h-6 rounded-full bg-cyan-400/30 blur-[2px]" />
+                        <div className="absolute w-6 h-6 rounded-full bg-emerald-600/25 blur-[2px]" />
                         {/* Main dot */}
-                        <div className="absolute w-3 h-3 rounded-full bg-cyan-400 border border-cyan-200 shadow-[0_0_10px_rgba(34,211,238,1)]" />
+                        <div className="absolute w-3 h-3 rounded-full bg-emerald-600 border border-emerald-400 shadow-[0_0_10px_rgba(5,150,105,0.6)]" />
                         {/* Center highlight */}
                         <div className="absolute w-1 h-1 rounded-full bg-white" />
                     </div>
@@ -146,29 +150,29 @@ export default function LowBandwidthView({ className = '', isPaused = false }: L
             </div>
 
             {/* Corner Frame Markers */}
-            <div className="absolute top-6 left-6 w-8 h-8 border-t-2 border-l-2 border-cyan-500/40 rounded-tl z-10"></div>
-            <div className="absolute top-6 right-6 w-8 h-8 border-t-2 border-r-2 border-cyan-500/40 rounded-tr z-10"></div>
-            <div className="absolute bottom-12 left-6 w-8 h-8 border-b-2 border-l-2 border-cyan-500/40 rounded-bl z-10"></div>
-            <div className="absolute bottom-12 right-6 w-8 h-8 border-b-2 border-r-2 border-cyan-500/40 rounded-br z-10"></div>
+            <div className="absolute top-6 left-6 w-8 h-8 border-t-2 border-l-2 border-emerald-600/50 rounded-tl z-10"></div>
+            <div className="absolute top-6 right-6 w-8 h-8 border-t-2 border-r-2 border-emerald-600/50 rounded-tr z-10"></div>
+            <div className="absolute bottom-12 left-6 w-8 h-8 border-b-2 border-l-2 border-emerald-600/50 rounded-bl z-10"></div>
+            <div className="absolute bottom-12 right-6 w-8 h-8 border-b-2 border-r-2 border-emerald-600/50 rounded-br z-10"></div>
 
             {/* Bottom Info Bar */}
-            <div className="absolute bottom-0 left-0 right-0 px-4 py-2 bg-black/70 backdrop-blur-sm border-t border-cyan-900/30 flex justify-between items-center z-30">
+            <div className="absolute bottom-0 left-0 right-0 px-4 py-2 bg-white border-t border-zinc-200 flex justify-between items-center z-30">
                 <div className="flex items-center gap-4">
-                    <span className="text-[10px] text-cyan-500/70 font-mono">CAM-01</span>
-                    <span className="text-[10px] text-gray-500">|</span>
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-[10px] text-emerald-600 font-mono font-semibold">CAM-01</span>
+                    <span className="text-[10px] text-zinc-300">|</span>
+                    <span className="text-[10px] text-zinc-600">
                         {data.people.length} {data.people.length === 1 ? 'person' : 'people'} in frame
                     </span>
                 </div>
-                <div className="text-[10px] text-gray-500 font-mono">
-                    {new Date(data.timestamp).toLocaleTimeString()}
+                <div className="text-[10px] text-zinc-500 font-mono">
+                    {isMounted ? displayTime : '--:--:--'}
                 </div>
             </div>
 
             {/* Paused Overlay */}
             {isPaused && (
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-40">
-                    <div className="text-amber-400 font-bold tracking-wider text-lg border border-amber-500/30 px-6 py-2 rounded-lg bg-amber-500/10">
+                <div className="absolute inset-0 bg-white/90 flex items-center justify-center backdrop-blur-sm z-40">
+                    <div className="text-amber-700 font-semibold tracking-wider text-lg border border-amber-200 px-6 py-2 rounded-lg bg-amber-50">
                         PAUSED
                     </div>
                 </div>

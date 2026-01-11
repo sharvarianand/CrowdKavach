@@ -2,10 +2,35 @@
   "cameras": [
     {
       "id": "cam-1",
-      "name": "DroidCam",
-      "url": "http://10.109.110.123:4747/video",
-      "zone": "Main Plaza",
-      "enabled": true
+      "name": "Main Entrance",
+      "url": "http://10.180.217.71:4747/video",
+      "zone": "Zone A",
+      "enabled": true,
+      "type": "live"
+    },
+    {
+      "id": "cam-2",
+      "name": "Plaza Center",
+      "url": "",
+      "zone": "Zone B",
+      "enabled": false,
+      "type": "offline"
+    },
+    {
+      "id": "cam-3",
+      "name": "Exit Gate",
+      "url": "",
+      "zone": "Zone C",
+      "enabled": false,
+      "type": "offline"
+    },
+    {
+      "id": "cam-4",
+      "name": "Parking Area",
+      "url": "",
+      "zone": "Zone D",
+      "enabled": false,
+      "type": "offline"
     }
   ]
 }

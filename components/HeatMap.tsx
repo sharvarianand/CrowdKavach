@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface Zone {
     id: string;
@@ -50,7 +49,7 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
                         return { ...zone, density, peopleCount };
                     }));
                 }
-            } catch (error) {
+            } catch {
                 // Use mock data
                 setZones(prev => prev.map(zone => {
                     const density = Math.min(100, Math.max(0, Math.random() * 100));
@@ -64,6 +63,23 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
         const interval = setInterval(updateDensities, 3000);
         return () => clearInterval(interval);
     }, []);
+
+    // Helper function to get density color - wrapped in useCallback for stable reference
+    const getDensityColor = useCallback((density: number): string => {
+        if (density < 30) return 'rgba(16, 185, 129, 0.6)'; // Green
+        if (density < 50) return 'rgba(34, 197, 94, 0.6)'; // Light green
+        if (density < 70) return 'rgba(245, 158, 11, 0.6)'; // Yellow/Orange
+        if (density < 85) return 'rgba(249, 115, 22, 0.6)'; // Orange
+        return 'rgba(239, 68, 68, 0.6)'; // Red
+    }, []);
+
+    const getDensityLevel = (density: number): { level: string; color: string } => {
+        if (density < 30) return { level: 'LOW', color: 'text-green-400' };
+        if (density < 50) return { level: 'MODERATE', color: 'text-green-300' };
+        if (density < 70) return { level: 'HIGH', color: 'text-yellow-400' };
+        if (density < 85) return { level: 'VERY HIGH', color: 'text-orange-400' };
+        return { level: 'CRITICAL', color: 'text-red-400' };
+    };
 
     // Draw heat map on canvas
     useEffect(() => {
@@ -136,23 +152,7 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
             ctx.fillText(densityLabel, zone.x + zone.width / 2, zone.y + zone.height / 2 + 28);
         });
 
-    }, [zones, hoveredZone, selectedZone]);
-
-    const getDensityColor = (density: number): string => {
-        if (density < 30) return 'rgba(16, 185, 129, 0.6)'; // Green
-        if (density < 50) return 'rgba(34, 197, 94, 0.6)'; // Light green
-        if (density < 70) return 'rgba(245, 158, 11, 0.6)'; // Yellow/Orange
-        if (density < 85) return 'rgba(249, 115, 22, 0.6)'; // Orange
-        return 'rgba(239, 68, 68, 0.6)'; // Red
-    };
-
-    const getDensityLevel = (density: number): { level: string; color: string } => {
-        if (density < 30) return { level: 'LOW', color: 'text-green-400' };
-        if (density < 50) return { level: 'MODERATE', color: 'text-green-300' };
-        if (density < 70) return { level: 'HIGH', color: 'text-yellow-400' };
-        if (density < 85) return { level: 'VERY HIGH', color: 'text-orange-400' };
-        return { level: 'CRITICAL', color: 'text-red-400' };
-    };
+    }, [zones, hoveredZone, selectedZone, getDensityColor]);
 
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current;
