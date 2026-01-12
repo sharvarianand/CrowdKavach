@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { 
   Users, Activity, BarChart3, Settings, Bell, 
   Camera, AlertTriangle, TrendingUp, Clock, Menu, X,
@@ -31,9 +33,9 @@ interface Alert {
 
 export default function DashboardUI({ user }: DashboardUIProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
   const [isMounted, setIsMounted] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const pathname = usePathname();
   
   // Generate chart data only on client side to avoid hydration mismatch
   const [chartData, setChartData] = useState<number[]>(Array(24).fill(50));
@@ -54,12 +56,11 @@ export default function DashboardUI({ user }: DashboardUIProps) {
   ]);
 
   const navItems = [
-    { id: 'dashboard', icon: Home, label: 'Dashboard' },
-    { id: 'cameras', icon: Camera, label: 'Cameras' },
-    { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-    { id: 'heatmap', icon: Map, label: 'Heat Map' },
-    { id: 'reports', icon: FileText, label: 'Reports' },
-    { id: 'settings', icon: Settings, label: 'Settings' },
+    { id: 'dashboard', icon: Home, label: 'Dashboard', href: '/dashboard' },
+    { id: 'heatmap', icon: Map, label: 'Heat Map', href: '/heatmap' },
+    { id: 'analytics', icon: BarChart3, label: 'Analysis', href: '/analysis' },
+    { id: 'reports', icon: FileText, label: 'Reports', href: '/reports' },
+    { id: 'settings', icon: Settings, label: 'Settings', href: '/settings' },
   ];
 
   const stats = [
@@ -103,20 +104,23 @@ export default function DashboardUI({ user }: DashboardUIProps) {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                activeTab === item.id 
-                  ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium' 
-                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700/50'
-              }`}
-            >
-              <item.icon className="w-5 h-5 shrink-0" />
-              {sidebarOpen && <span>{item.label}</span>}
-            </button>
-          ))}
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                  isActive 
+                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium' 
+                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700/50'
+                }`}
+              >
+                <item.icon className="w-5 h-5 shrink-0" />
+                {sidebarOpen && <span>{item.label}</span>}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* User & Logout */}

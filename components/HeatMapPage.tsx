@@ -2,134 +2,175 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
-    Shield,
-    User,
-    MoreHorizontal,
-    LogOut,
-    LayoutDashboard,
+    Home,
     Map,
-    Bell,
-    Settings,
     BarChart3,
-    FileText
+    Settings,
+    Bell,
+    FileText,
+    LogOut,
+    Menu,
+    X,
+    Sun,
+    Moon
 } from 'lucide-react';
+import Logo from './Logo';
 import HeatMapVisualization from './HeatMap';
-import EmergencyButton from './EmergencyButton';
+
+import { useTheme } from '@/lib/ThemeContext';
 import { AppUser } from '@/lib/types';
 
 export default function HeatMapPage({ user }: { user?: AppUser }) {
-    const [showProfileMenu, setShowProfileMenu] = useState(false);
-    const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('en-US', { hour12: false }));
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const { theme, toggleTheme } = useTheme();
+    const pathname = usePathname();
 
-    const currentDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-
-    // Update time
+    // Hydration-safe last updated time
+    const [lastUpdated, setLastUpdated] = useState<string>("");
     useEffect(() => {
-        const timer = setInterval(() => {
-            setCurrentTime(new Date().toLocaleTimeString('en-US', { hour12: false }));
+        setLastUpdated(new Date().toLocaleTimeString());
+        const interval = setInterval(() => {
+            setLastUpdated(new Date().toLocaleTimeString());
         }, 1000);
-        return () => clearInterval(timer);
+        return () => clearInterval(interval);
     }, []);
 
-    return (
-        <div className="min-h-screen bg-[#050b14] text-white font-sans selection:bg-cyan-500/30 overflow-hidden flex flex-col">
-            {/* Emergency Button */}
-            <EmergencyButton />
+    const navItems = [
+        { id: 'dashboard', icon: Home, label: 'Dashboard', href: '/dashboard' },
+        { id: 'heatmap', icon: Map, label: 'Heat Map', href: '/heatmap' },
+        { id: 'analytics', icon: BarChart3, label: 'Analysis', href: '/analysis' },
+        { id: 'reports', icon: FileText, label: 'Reports', href: '/reports' },
+        { id: 'settings', icon: Settings, label: 'Settings', href: '/settings' },
+    ];
 
-            {/* Header */}
-            <header className="h-16 border-b border-cyan-900/30 bg-[#0a101f]/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
-                <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <Shield className="w-8 h-8 text-cyan-400 fill-cyan-950" />
-                        <div className="absolute inset-0 bg-cyan-400/20 blur-xl rounded-full"></div>
-                    </div>
-                    <h1 className="text-xl font-bold tracking-wider text-white">
-                        CROWD<span className="text-cyan-400">KAVACH</span>
-                    </h1>
+    const getUserInitials = () => {
+        if (user?.firstName && user?.lastName) {
+            return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+        }
+        if (user?.email) {
+            return user.email.substring(0, 2).toUpperCase();
+        }
+        return 'US';
+    };
+
+    return (
+        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex transition-colors duration-200">
+
+
+            {/* Sidebar */}
+            <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-zinc-800 border-r border-zinc-200 dark:border-zinc-700 transition-all duration-300 flex flex-col`}>
+                {/* Logo */}
+                <div className="p-4 border-b border-zinc-100 dark:border-zinc-700">
+                    <Logo size={sidebarOpen ? 'md' : 'sm'} showText={sidebarOpen} />
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex items-center gap-1">
-                    <Link href="/dashboard" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <LayoutDashboard className="w-4 h-4" />
-                        <span className="text-sm">Dashboard</span>
-                    </Link>
-                    <Link href="/heatmap" className="flex items-center gap-2 px-4 py-2 rounded-lg text-cyan-400 bg-cyan-500/10 border border-cyan-500/30">
-                        <Map className="w-4 h-4" />
-                        <span className="text-sm">Heat Map</span>
-                    </Link>
-                    <Link href="/analysis" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <BarChart3 className="w-4 h-4" />
-                        <span className="text-sm">Analysis</span>
-                    </Link>
-                    <Link href="/reports" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <FileText className="w-4 h-4" />
-                        <span className="text-sm">Reports</span>
-                    </Link>
-                    <Link href="/settings" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <Settings className="w-4 h-4" />
-                        <span className="text-sm">Settings</span>
-                    </Link>
+                <nav className="flex-1 p-4 space-y-1">
+                    {navItems.map((item) => {
+                        const isActive = pathname === item.href;
+                        return (
+                            <Link
+                                key={item.id}
+                                href={item.href}
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium'
+                                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700/50'
+                                    }`}
+                            >
+                                <item.icon className="w-5 h-5 shrink-0" />
+                                {sidebarOpen && <span>{item.label}</span>}
+                            </Link>
+                        );
+                    })}
                 </nav>
 
-                <div className="flex items-center gap-6">
-                    <div className="text-xs font-mono text-cyan-300/70 tracking-widest">
-                        {currentDate} - {currentTime}
-                    </div>
-
-                    {/* Notification Bell */}
-                    <div className="relative">
-                        <Bell className="w-5 h-5 text-cyan-500/70 hover:text-cyan-400 cursor-pointer transition-colors" />
-                    </div>
-
-                    <div className="flex items-center gap-3 pl-6 border-l border-cyan-900/30 relative">
-                        <div className="w-8 h-8 rounded-full bg-cyan-900/30 flex items-center justify-center border border-cyan-500/30">
-                            <User className="w-4 h-4 text-cyan-400" />
+                {/* User & Logout */}
+                {user && sidebarOpen && (
+                    <div className="p-4 border-t border-zinc-100 dark:border-zinc-700">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                    {user.firstName || user.email}
+                                </p>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user.email}</p>
+                            </div>
                         </div>
-                        <span className="text-sm font-medium text-cyan-100 tracking-wide">
-                            {user?.firstName ? user.firstName.toUpperCase() : 'ADMIN_01'}
-                        </span>
-                        <div className="relative">
-                            <MoreHorizontal
-                                className="w-4 h-4 text-cyan-500/50 ml-2 cursor-pointer hover:text-cyan-400 transition-colors"
-                                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                            />
-                            {showProfileMenu && (
-                                <div className="absolute right-0 top-8 w-48 bg-[#0f1729] border border-cyan-900/30 rounded-lg shadow-xl z-50 overflow-hidden">
-                                    <div className="p-3 border-b border-cyan-900/30">
-                                        <div className="text-xs text-cyan-500/70">Signed in as</div>
-                                        <div className="text-sm text-cyan-100 truncate">{user?.email || 'admin@crowdkavach.com'}</div>
-                                    </div>
-                                    <a
-                                        href="/api/auth/logout"
-                                        className="flex items-center gap-3 px-3 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                                    >
-                                        <LogOut className="w-4 h-4" />
-                                        <span>Logout</span>
-                                    </a>
-                                </div>
-                            )}
-                        </div>
+                        <a
+                            href="/api/auth/logout"
+                            className="flex items-center gap-2 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-sm"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            Sign Out
+                        </a>
                     </div>
-                </div>
-            </header>
+                )}
+
+                {/* Toggle Button */}
+                <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="p-4 border-t border-zinc-100 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex justify-center"
+                >
+                    {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+            </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-4 overflow-hidden">
-                <HeatMapVisualization className="h-full" />
-            </main>
+            <div className="flex-1 flex flex-col">
+                {/* Top Bar */}
+                <header className="bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 px-6 py-4 flex items-center justify-between transition-colors duration-200">
+                    <div>
+                        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                            <Map className="w-6 h-6 text-emerald-500" />
+                            Heat Map
+                        </h1>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">Real-time crowd density visualization</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        {/* Theme Toggle Button */}
+                        <button
+                            onClick={toggleTheme}
+                            className="relative p-2 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                        >
+                            {theme === 'dark' ? (
+                                <Sun className="w-5 h-5" />
+                            ) : (
+                                <Moon className="w-5 h-5" />
+                            )}
+                        </button>
+                        <button className="relative p-2 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                            <Bell className="w-5 h-5" />
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                        </button>
+                        <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                        </div>
+                    </div>
+                </header>
 
-            {/* Footer */}
-            <footer className="h-12 border-t border-cyan-900/30 bg-[#0a101f] px-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="text-xs font-bold text-emerald-500 tracking-wider">HEAT MAP MONITORING ACTIVE</span>
-                </div>
-                <div className="text-xs text-gray-500">
-                    Last updated: {currentTime}
-                </div>
-            </footer>
+                {/* Heat Map Content */}
+                <main className="flex-1 p-6 overflow-auto">
+                    <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 h-full overflow-hidden">
+                        <HeatMapVisualization className="h-full" />
+                    </div>
+                </main>
+
+                {/* Footer Status */}
+                <footer className="bg-white dark:bg-zinc-800 border-t border-zinc-200 dark:border-zinc-700 px-6 py-3 flex items-center justify-between transition-colors duration-200">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Heat Map Active</span>
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Last updated: {lastUpdated}
+                    </div>
+                </footer>
+            </div>
         </div>
     );
 }

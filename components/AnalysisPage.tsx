@@ -2,17 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
-    Shield,
-    User,
-    MoreHorizontal,
-    LogOut,
-    LayoutDashboard,
+    Home,
     Map,
-    Bell,
-    Settings,
     BarChart3,
+    Settings,
+    Bell,
     FileText,
+    LogOut,
+    Menu,
+    X,
+    Sun,
+    Moon,
     TrendingUp,
     TrendingDown,
     Users,
@@ -24,7 +26,9 @@ import {
     ArrowUpRight,
     ArrowDownRight
 } from 'lucide-react';
-import EmergencyButton from './EmergencyButton';
+import Logo from './Logo';
+
+import { useTheme } from '@/lib/ThemeContext';
 import { AppUser } from '@/lib/types';
 
 interface AnalyticsData {
@@ -57,8 +61,9 @@ interface ZoneAnalysis {
 }
 
 export default function AnalysisPage({ user }: { user?: AppUser }) {
-    const [showProfileMenu, setShowProfileMenu] = useState(false);
-    const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('en-US', { hour12: false }));
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const { theme, toggleTheme } = useTheme();
+    const pathname = usePathname();
     const [selectedTimeRange, setSelectedTimeRange] = useState<'today' | 'week' | 'month'>('today');
     const [analyticsData, setAnalyticsData] = useState<AnalyticsData>({
         totalVisitors: 0,
@@ -72,20 +77,17 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
     const [zoneAnalysis, setZoneAnalysis] = useState<ZoneAnalysis[]>([]);
     const [trends, setTrends] = useState<TrendData[]>([]);
 
-    const currentDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-
-    // Update time
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setCurrentTime(new Date().toLocaleTimeString('en-US', { hour12: false }));
-        }, 1000);
-        return () => clearInterval(timer);
-    }, []);
+    const navItems = [
+        { id: 'dashboard', icon: Home, label: 'Dashboard', href: '/dashboard' },
+        { id: 'heatmap', icon: Map, label: 'Heat Map', href: '/heatmap' },
+        { id: 'analytics', icon: BarChart3, label: 'Analysis', href: '/analysis' },
+        { id: 'reports', icon: FileText, label: 'Reports', href: '/reports' },
+        { id: 'settings', icon: Settings, label: 'Settings', href: '/settings' },
+    ];
 
     // Generate analytics data
     useEffect(() => {
         const generateData = () => {
-            // Main analytics
             setAnalyticsData({
                 totalVisitors: Math.floor(Math.random() * 5000) + 8000,
                 peakHour: `${Math.floor(Math.random() * 12) + 10}:00`,
@@ -95,7 +97,6 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                 safetyScore: Math.floor(Math.random() * 15) + 80
             });
 
-            // Hourly data
             const hours = [];
             for (let i = 6; i <= 22; i++) {
                 hours.push({
@@ -105,7 +106,6 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
             }
             setHourlyData(hours);
 
-            // Zone analysis
             const zones = ['Main Plaza', 'Entry Gate', 'Exit Gate', 'Food Court', 'Stage Area', 'Parking', 'VIP Area'];
             setZoneAnalysis(zones.map(zone => ({
                 zone,
@@ -115,7 +115,6 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
                 incidents: Math.floor(Math.random() * 5)
             })));
 
-            // Trends
             setTrends([
                 { label: 'Visitor Count', value: 12450, change: 12.5, trend: 'up' },
                 { label: 'Avg Dwell Time', value: 24, change: -5.2, trend: 'down' },
@@ -133,362 +132,374 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
 
     const getRiskColor = (level: string) => {
         switch (level) {
-            case 'high': return 'text-red-400 bg-red-500/20';
-            case 'medium': return 'text-yellow-400 bg-yellow-500/20';
-            default: return 'text-green-400 bg-green-500/20';
+            case 'high': return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30';
+            case 'medium': return 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30';
+            default: return 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30';
         }
     };
 
-    return (
-        <div className="min-h-screen bg-[#050b14] text-white font-sans selection:bg-cyan-500/30 overflow-hidden flex flex-col">
-            {/* Emergency Button */}
-            <EmergencyButton />
+    const getUserInitials = () => {
+        if (user?.firstName && user?.lastName) {
+            return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+        }
+        if (user?.email) {
+            return user.email.substring(0, 2).toUpperCase();
+        }
+        return 'US';
+    };
 
-            {/* Header */}
-            <header className="h-16 border-b border-cyan-900/30 bg-[#0a101f]/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
-                <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <Shield className="w-8 h-8 text-cyan-400 fill-cyan-950" />
-                        <div className="absolute inset-0 bg-cyan-400/20 blur-xl rounded-full"></div>
-                    </div>
-                    <h1 className="text-xl font-bold tracking-wider text-white">
-                        CROWD<span className="text-cyan-400">KAVACH</span>
-                    </h1>
+    return (
+        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex transition-colors duration-200">
+
+
+            {/* Sidebar */}
+            <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-zinc-800 border-r border-zinc-200 dark:border-zinc-700 transition-all duration-300 flex flex-col`}>
+                {/* Logo */}
+                <div className="p-4 border-b border-zinc-100 dark:border-zinc-700">
+                    <Logo size={sidebarOpen ? 'md' : 'sm'} showText={sidebarOpen} />
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex items-center gap-1">
-                    <Link href="/dashboard" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <LayoutDashboard className="w-4 h-4" />
-                        <span className="text-sm">Dashboard</span>
-                    </Link>
-                    <Link href="/heatmap" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <Map className="w-4 h-4" />
-                        <span className="text-sm">Heat Map</span>
-                    </Link>
-                    <Link href="/analysis" className="flex items-center gap-2 px-4 py-2 rounded-lg text-cyan-400 bg-cyan-500/10 border border-cyan-500/30">
-                        <BarChart3 className="w-4 h-4" />
-                        <span className="text-sm">Analysis</span>
-                    </Link>
-                    <Link href="/reports" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <FileText className="w-4 h-4" />
-                        <span className="text-sm">Reports</span>
-                    </Link>
-                    <Link href="/settings" className="flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                        <Settings className="w-4 h-4" />
-                        <span className="text-sm">Settings</span>
-                    </Link>
-                </nav>
-
-                <div className="flex items-center gap-6">
-                    <div className="text-xs font-mono text-cyan-300/70 tracking-widest">
-                        {currentDate} - {currentTime}
-                    </div>
-
-                    {/* Notification Bell */}
-                    <div className="relative">
-                        <Bell className="w-5 h-5 text-cyan-500/70 hover:text-cyan-400 cursor-pointer transition-colors" />
-                    </div>
-
-                    <div className="flex items-center gap-3 pl-6 border-l border-cyan-900/30 relative">
-                        <div className="w-8 h-8 rounded-full bg-cyan-900/30 flex items-center justify-center border border-cyan-500/30">
-                            <User className="w-4 h-4 text-cyan-400" />
-                        </div>
-                        <span className="text-sm font-medium text-cyan-100 tracking-wide">
-                            {user?.firstName ? user.firstName.toUpperCase() : 'ADMIN_01'}
-                        </span>
-                        <div className="relative">
-                            <MoreHorizontal
-                                className="w-4 h-4 text-cyan-500/50 ml-2 cursor-pointer hover:text-cyan-400 transition-colors"
-                                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                            />
-                            {showProfileMenu && (
-                                <div className="absolute right-0 top-8 w-48 bg-[#0f1729] border border-cyan-900/30 rounded-lg shadow-xl z-50 overflow-hidden">
-                                    <div className="p-3 border-b border-cyan-900/30">
-                                        <div className="text-xs text-cyan-500/70">Signed in as</div>
-                                        <div className="text-sm text-cyan-100 truncate">{user?.email || 'admin@crowdkavach.com'}</div>
-                                    </div>
-                                    <a
-                                        href="/api/auth/logout"
-                                        className="flex items-center gap-3 px-3 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                                    >
-                                        <LogOut className="w-4 h-4" />
-                                        <span>Logout</span>
-                                    </a>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            {/* Main Content */}
-            <main className="flex-1 p-6 overflow-auto">
-                {/* Time Range Selector */}
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                        <BarChart3 className="w-7 h-7 text-cyan-400" />
-                        Crowd Analytics & Insights
-                    </h2>
-                    <div className="flex items-center gap-2 bg-[#0a101f] rounded-lg p-1 border border-cyan-900/30">
-                        {(['today', 'week', 'month'] as const).map((range) => (
-                            <button
-                                key={range}
-                                onClick={() => setSelectedTimeRange(range)}
-                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${selectedTimeRange === range
-                                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                                    : 'text-gray-400 hover:text-cyan-400'
+                <nav className="flex-1 p-4 space-y-1">
+                    {navItems.map((item) => {
+                        const isActive = pathname === item.href;
+                        return (
+                            <Link
+                                key={item.id}
+                                href={item.href}
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium'
+                                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700/50'
                                     }`}
                             >
-                                {range.charAt(0).toUpperCase() + range.slice(1)}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                                <item.icon className="w-5 h-5 shrink-0" />
+                                {sidebarOpen && <span>{item.label}</span>}
+                            </Link>
+                        );
+                    })}
+                </nav>
 
-                {/* Key Metrics */}
-                <div className="grid grid-cols-6 gap-4 mb-6">
-                    <div className="bg-[#0a101f] rounded-xl p-4 border border-cyan-900/30">
-                        <div className="flex items-center justify-between mb-2">
-                            <Users className="w-5 h-5 text-cyan-400" />
-                            <span className="text-xs text-green-400 flex items-center gap-1">
-                                <ArrowUpRight className="w-3 h-3" /> 12.5%
-                            </span>
+                {/* User & Logout */}
+                {user && sidebarOpen && (
+                    <div className="p-4 border-t border-zinc-100 dark:border-zinc-700">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                    {user.firstName || user.email}
+                                </p>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user.email}</p>
+                            </div>
                         </div>
-                        <div className="text-2xl font-bold text-white">{analyticsData.totalVisitors.toLocaleString()}</div>
-                        <div className="text-xs text-gray-500">Total Visitors</div>
+                        <a
+                            href="/api/auth/logout"
+                            className="flex items-center gap-2 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-sm"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            Sign Out
+                        </a>
                     </div>
-                    <div className="bg-[#0a101f] rounded-xl p-4 border border-cyan-900/30">
-                        <div className="flex items-center justify-between mb-2">
-                            <Clock className="w-5 h-5 text-purple-400" />
-                            <span className="text-xs text-gray-400">{analyticsData.peakHour}</span>
-                        </div>
-                        <div className="text-2xl font-bold text-white">{analyticsData.avgDwellTime}m</div>
-                        <div className="text-xs text-gray-500">Avg Dwell Time</div>
-                    </div>
-                    <div className="bg-[#0a101f] rounded-xl p-4 border border-cyan-900/30">
-                        <div className="flex items-center justify-between mb-2">
-                            <Activity className="w-5 h-5 text-yellow-400" />
-                            <span className="text-xs text-yellow-400">{analyticsData.crowdDensity}%</span>
-                        </div>
-                        <div className="text-2xl font-bold text-white">{analyticsData.crowdDensity}%</div>
-                        <div className="text-xs text-gray-500">Crowd Density</div>
-                    </div>
-                    <div className="bg-[#0a101f] rounded-xl p-4 border border-cyan-900/30">
-                        <div className="flex items-center justify-between mb-2">
-                            <AlertTriangle className="w-5 h-5 text-red-400" />
-                            <span className="text-xs text-green-400 flex items-center gap-1">
-                                <ArrowDownRight className="w-3 h-3" /> -15%
-                            </span>
-                        </div>
-                        <div className="text-2xl font-bold text-white">{analyticsData.incidentCount}</div>
-                        <div className="text-xs text-gray-500">Incidents Today</div>
-                    </div>
-                    <div className="bg-[#0a101f] rounded-xl p-4 border border-cyan-900/30">
-                        <div className="flex items-center justify-between mb-2">
-                            <Target className="w-5 h-5 text-emerald-400" />
-                        </div>
-                        <div className="text-2xl font-bold text-emerald-400">{analyticsData.safetyScore}%</div>
-                        <div className="text-xs text-gray-500">Safety Score</div>
-                    </div>
-                    <div className="bg-[#0a101f] rounded-xl p-4 border border-cyan-900/30">
-                        <div className="flex items-center justify-between mb-2">
-                            <Zap className="w-5 h-5 text-orange-400" />
-                        </div>
-                        <div className="text-2xl font-bold text-white">{analyticsData.peakHour}</div>
-                        <div className="text-xs text-gray-500">Peak Hour</div>
-                    </div>
-                </div>
+                )}
 
-                <div className="grid grid-cols-12 gap-6">
-                    {/* Hourly Footfall Chart */}
-                    <div className="col-span-8 bg-[#0a101f] rounded-xl p-6 border border-cyan-900/30">
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <TrendingUp className="w-5 h-5 text-cyan-400" />
-                            Hourly Footfall Analysis
-                        </h3>
-                        <div className="flex items-end gap-2 h-64">
-                            {hourlyData.map((data, index) => (
-                                <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                                    <div
-                                        className="w-full bg-linear-to-t from-cyan-600 to-cyan-400 rounded-t-sm transition-all duration-500 hover:from-cyan-500 hover:to-cyan-300"
-                                        style={{ height: `${(data.count / maxHourlyCount) * 100}%` }}
-                                        title={`${data.count} visitors`}
-                                    ></div>
-                                    <span className="text-[10px] text-gray-500 -rotate-45 origin-center">
-                                        {data.hour}
-                                    </span>
-                                </div>
+                {/* Toggle Button */}
+                <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="p-4 border-t border-zinc-100 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex justify-center"
+                >
+                    {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+            </aside>
+
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col">
+                {/* Top Bar */}
+                <header className="bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 px-6 py-4 flex items-center justify-between transition-colors duration-200">
+                    <div>
+                        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                            <BarChart3 className="w-6 h-6 text-emerald-500" />
+                            Analytics
+                        </h1>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">Crowd analytics & insights</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        {/* Time Range Selector */}
+                        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-700 rounded-lg p-1">
+                            {(['today', 'week', 'month'] as const).map((range) => (
+                                <button
+                                    key={range}
+                                    onClick={() => setSelectedTimeRange(range)}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${selectedTimeRange === range
+                                        ? 'bg-white dark:bg-zinc-600 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                                        : 'text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                                        }`}
+                                >
+                                    {range.charAt(0).toUpperCase() + range.slice(1)}
+                                </button>
                             ))}
                         </div>
-                        <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
-                            <span>Peak: {hourlyData.reduce((max, d) => d.count > max.count ? d : max, hourlyData[0])?.hour || 'N/A'}</span>
-                            <span>Total: {hourlyData.reduce((sum, d) => sum + d.count, 0).toLocaleString()} visitors</span>
+                        {/* Theme Toggle */}
+                        <button
+                            onClick={toggleTheme}
+                            className="relative p-2 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                        >
+                            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                        </button>
+                        <button className="relative p-2 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                            <Bell className="w-5 h-5" />
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                        </button>
+                        <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                        </div>
+                    </div>
+                </header>
+
+                {/* Analytics Content */}
+                <main className="flex-1 p-6 overflow-auto">
+                    {/* Key Metrics */}
+                    <div className="grid grid-cols-6 gap-4 mb-6">
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <Users className="w-5 h-5 text-emerald-500" />
+                                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                    <ArrowUpRight className="w-3 h-3" /> 12.5%
+                                </span>
+                            </div>
+                            <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analyticsData.totalVisitors.toLocaleString()}</div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">Total Visitors</div>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <Clock className="w-5 h-5 text-purple-500" />
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400">{analyticsData.peakHour}</span>
+                            </div>
+                            <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analyticsData.avgDwellTime}m</div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">Avg Dwell Time</div>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <Activity className="w-5 h-5 text-amber-500" />
+                                <span className="text-xs text-amber-600 dark:text-amber-400">{analyticsData.crowdDensity}%</span>
+                            </div>
+                            <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analyticsData.crowdDensity}%</div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">Crowd Density</div>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <AlertTriangle className="w-5 h-5 text-red-500" />
+                                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                    <ArrowDownRight className="w-3 h-3" /> -15%
+                                </span>
+                            </div>
+                            <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analyticsData.incidentCount}</div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">Incidents Today</div>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <Target className="w-5 h-5 text-emerald-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{analyticsData.safetyScore}%</div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">Safety Score</div>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <Zap className="w-5 h-5 text-orange-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analyticsData.peakHour}</div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">Peak Hour</div>
                         </div>
                     </div>
 
-                    {/* Trends */}
-                    <div className="col-span-4 bg-[#0a101f] rounded-xl p-6 border border-cyan-900/30">
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <Activity className="w-5 h-5 text-purple-400" />
-                            Key Trends
-                        </h3>
-                        <div className="space-y-4">
-                            {trends.map((trend, index) => (
-                                <div key={index} className="flex items-center justify-between p-3 bg-[#0f1729] rounded-lg border border-cyan-900/20">
-                                    <div>
-                                        <div className="text-sm text-gray-400">{trend.label}</div>
-                                        <div className="text-xl font-bold text-white">{trend.value.toLocaleString()}</div>
+                    <div className="grid grid-cols-12 gap-6">
+                        {/* Hourly Footfall Chart */}
+                        <div className="col-span-8 bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700">
+                            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                                Hourly Footfall Analysis
+                            </h3>
+                            <div className="flex items-end gap-2 h-64">
+                                {hourlyData.map((data, index) => (
+                                    <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                                        <div
+                                            className="w-full bg-linear-to-t from-emerald-600 to-emerald-400 dark:from-emerald-700 dark:to-emerald-500 rounded-t-sm transition-all duration-500 hover:from-emerald-500 hover:to-emerald-300"
+                                            style={{ height: `${(data.count / maxHourlyCount) * 100}%` }}
+                                            title={`${data.count} visitors`}
+                                        ></div>
+                                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 -rotate-45 origin-center">
+                                            {data.hour}
+                                        </span>
                                     </div>
-                                    <div className={`flex items-center gap-1 text-sm ${trend.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
-                                        {trend.trend === 'up' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                                        {Math.abs(trend.change)}%
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
+                            <div className="mt-4 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                                <span>Peak: {hourlyData.reduce((max, d) => d.count > max.count ? d : max, hourlyData[0])?.hour || 'N/A'}</span>
+                                <span>Total: {hourlyData.reduce((sum, d) => sum + d.count, 0).toLocaleString()} visitors</span>
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Zone Analysis */}
-                    <div className="col-span-12 bg-[#0a101f] rounded-xl p-6 border border-cyan-900/30">
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <Map className="w-5 h-5 text-emerald-400" />
-                            Zone-wise Analysis
-                        </h3>
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="border-b border-cyan-900/30">
-                                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Zone</th>
-                                        <th className="text-center py-3 px-4 text-sm font-medium text-gray-400">Avg Occupancy</th>
-                                        <th className="text-center py-3 px-4 text-sm font-medium text-gray-400">Peak Occupancy</th>
-                                        <th className="text-center py-3 px-4 text-sm font-medium text-gray-400">Risk Level</th>
-                                        <th className="text-center py-3 px-4 text-sm font-medium text-gray-400">Incidents</th>
-                                        <th className="text-center py-3 px-4 text-sm font-medium text-gray-400">Occupancy Trend</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {zoneAnalysis.map((zone, index) => (
-                                        <tr key={index} className="border-b border-cyan-900/20 hover:bg-cyan-500/5 transition-colors">
-                                            <td className="py-3 px-4 text-sm font-medium text-white">{zone.zone}</td>
-                                            <td className="py-3 px-4 text-center">
-                                                <span className="text-sm text-cyan-400">{zone.avgOccupancy}%</span>
-                                            </td>
-                                            <td className="py-3 px-4 text-center">
-                                                <span className="text-sm text-yellow-400">{zone.peakOccupancy}%</span>
-                                            </td>
-                                            <td className="py-3 px-4 text-center">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(zone.riskLevel)}`}>
-                                                    {zone.riskLevel.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-4 text-center">
-                                                <span className={`text-sm ${zone.incidents > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                                                    {zone.incidents}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-4">
-                                                <div className="w-full bg-gray-700 rounded-full h-2">
-                                                    <div
-                                                        className={`h-2 rounded-full ${zone.avgOccupancy > 70 ? 'bg-red-500' :
-                                                            zone.avgOccupancy > 50 ? 'bg-yellow-500' : 'bg-green-500'
-                                                            }`}
-                                                        style={{ width: `${zone.avgOccupancy}%` }}
-                                                    ></div>
-                                                </div>
-                                            </td>
+                        {/* Trends */}
+                        <div className="col-span-4 bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700">
+                            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                                <Activity className="w-5 h-5 text-purple-500" />
+                                Key Trends
+                            </h3>
+                            <div className="space-y-4">
+                                {trends.map((trend, index) => (
+                                    <div key={index} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-100 dark:border-zinc-600">
+                                        <div>
+                                            <div className="text-sm text-zinc-500 dark:text-zinc-400">{trend.label}</div>
+                                            <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{trend.value.toLocaleString()}</div>
+                                        </div>
+                                        <div className={`flex items-center gap-1 text-sm ${trend.trend === 'up' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                            {trend.trend === 'up' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                                            {Math.abs(trend.change)}%
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Zone Analysis */}
+                        <div className="col-span-12 bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700">
+                            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                                <Map className="w-5 h-5 text-emerald-500" />
+                                Zone-wise Analysis
+                            </h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                                            <th className="text-left py-3 px-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Zone</th>
+                                            <th className="text-center py-3 px-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Avg Occupancy</th>
+                                            <th className="text-center py-3 px-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Peak Occupancy</th>
+                                            <th className="text-center py-3 px-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Risk Level</th>
+                                            <th className="text-center py-3 px-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Incidents</th>
+                                            <th className="text-center py-3 px-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Occupancy Trend</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {zoneAnalysis.map((zone, index) => (
+                                            <tr key={index} className="border-b border-zinc-100 dark:border-zinc-700/50 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition-colors">
+                                                <td className="py-3 px-4 text-sm font-medium text-zinc-900 dark:text-zinc-100">{zone.zone}</td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <span className="text-sm text-emerald-600 dark:text-emerald-400">{zone.avgOccupancy}%</span>
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <span className="text-sm text-amber-600 dark:text-amber-400">{zone.peakOccupancy}%</span>
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(zone.riskLevel)}`}>
+                                                        {zone.riskLevel.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <span className={`text-sm ${zone.incidents > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                                        {zone.incidents}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="w-full bg-zinc-200 dark:bg-zinc-600 rounded-full h-2">
+                                                        <div
+                                                            className={`h-2 rounded-full ${zone.avgOccupancy > 70 ? 'bg-red-500' :
+                                                                zone.avgOccupancy > 50 ? 'bg-amber-500' : 'bg-emerald-500'
+                                                                }`}
+                                                            style={{ width: `${zone.avgOccupancy}%` }}
+                                                        ></div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Predictions */}
-                    <div className="col-span-6 bg-[#0a101f] rounded-xl p-6 border border-cyan-900/30">
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <Zap className="w-5 h-5 text-yellow-400" />
-                            AI Predictions
-                        </h3>
-                        <div className="space-y-3">
-                            <div className="p-4 bg-linear-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/20">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <AlertTriangle className="w-5 h-5 text-yellow-400" />
-                                    <span className="text-sm font-medium text-yellow-400">Expected Peak in 2 hours</span>
+                        {/* AI Predictions */}
+                        <div className="col-span-6 bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700">
+                            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                                <Zap className="w-5 h-5 text-amber-500" />
+                                AI Predictions
+                            </h3>
+                            <div className="space-y-3">
+                                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                                        <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Expected Peak in 2 hours</span>
+                                    </div>
+                                    <p className="text-xs text-amber-600 dark:text-amber-400/80">Based on historical data, crowd density is expected to reach 85% by 16:00.</p>
                                 </div>
-                                <p className="text-xs text-gray-400">Based on historical data, crowd density is expected to reach 85% by 16:00. Consider deploying additional staff to Entry Gate and Main Plaza.</p>
-                            </div>
-                            <div className="p-4 bg-linear-to-r from-cyan-500/10 to-transparent rounded-lg border border-cyan-500/20">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <TrendingUp className="w-5 h-5 text-cyan-400" />
-                                    <span className="text-sm font-medium text-cyan-400">Visitor Surge Predicted</span>
+                                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                                        <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Visitor Surge Predicted</span>
+                                    </div>
+                                    <p className="text-xs text-emerald-600 dark:text-emerald-400/80">Weather conditions favorable. Expected 15% increase in visitors.</p>
                                 </div>
-                                <p className="text-xs text-gray-400">Weather conditions favorable. Expected 15% increase in visitors compared to last week&apos;s average.</p>
-                            </div>
-                            <div className="p-4 bg-linear-to-r from-emerald-500/10 to-transparent rounded-lg border border-emerald-500/20">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <Target className="w-5 h-5 text-emerald-400" />
-                                    <span className="text-sm font-medium text-emerald-400">Optimal Staffing Recommendation</span>
-                                </div>
-                                <p className="text-xs text-gray-400">Based on current patterns, recommend 3 additional security personnel at Food Court during 12:00-14:00.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Anomaly Detection */}
-                    <div className="col-span-6 bg-[#0a101f] rounded-xl p-6 border border-cyan-900/30">
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <AlertTriangle className="w-5 h-5 text-red-400" />
-                            Anomaly Detection
-                        </h3>
-                        <div className="space-y-3">
-                            <div className="p-4 bg-linear-to-r from-red-500/10 to-transparent rounded-lg border border-red-500/20">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-medium text-red-400">Unusual Gathering - Zone B</span>
-                                    <span className="text-xs text-gray-500">12:34 PM</span>
-                                </div>
-                                <p className="text-xs text-gray-400">Detected 40% higher than normal crowd density in Zone B. Pattern suggests potential bottleneck near exit.</p>
-                                <div className="mt-2 flex gap-2">
-                                    <span className="px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded">High Priority</span>
-                                    <span className="px-2 py-1 bg-gray-700 text-gray-400 text-xs rounded">Auto-Alert Sent</span>
-                                </div>
-                            </div>
-                            <div className="p-4 bg-linear-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/20">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-medium text-yellow-400">Flow Disruption - Entry Gate</span>
-                                    <span className="text-xs text-gray-500">11:15 AM</span>
-                                </div>
-                                <p className="text-xs text-gray-400">Entry rate dropped by 60% for 5 minutes. Possible obstruction or crowd hesitation detected.</p>
-                                <div className="mt-2 flex gap-2">
-                                    <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs rounded">Medium Priority</span>
-                                    <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Resolved</span>
-                                </div>
-                            </div>
-                            <div className="p-4 bg-linear-to-r from-purple-500/10 to-transparent rounded-lg border border-purple-500/20">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-medium text-purple-400">Unusual Movement Pattern</span>
-                                    <span className="text-xs text-gray-500">10:45 AM</span>
-                                </div>
-                                <p className="text-xs text-gray-400">Detected counter-flow movement in Main Plaza. 15 individuals moving against crowd direction.</p>
-                                <div className="mt-2 flex gap-2">
-                                    <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded">Monitoring</span>
+                                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                        <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Staffing Recommendation</span>
+                                    </div>
+                                    <p className="text-xs text-blue-600 dark:text-blue-400/80">Recommend 3 additional security personnel at Food Court during 12:00-14:00.</p>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </main>
 
-            {/* Footer */}
-            <footer className="h-12 border-t border-cyan-900/30 bg-[#0a101f] px-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="text-xs font-bold text-emerald-500 tracking-wider">ANALYTICS ENGINE ACTIVE</span>
-                </div>
-                <div className="text-xs text-gray-500">
-                    Last updated: {currentTime}
-                </div>
-            </footer>
+                        {/* Anomaly Detection */}
+                        <div className="col-span-6 bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700">
+                            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                                <AlertTriangle className="w-5 h-5 text-red-500" />
+                                Anomaly Detection
+                            </h3>
+                            <div className="space-y-3">
+                                <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-red-700 dark:text-red-300">Unusual Gathering - Zone B</span>
+                                        <span className="text-xs text-zinc-500 dark:text-zinc-400">12:34 PM</span>
+                                    </div>
+                                    <p className="text-xs text-red-600 dark:text-red-400/80">Detected 40% higher than normal crowd density in Zone B.</p>
+                                    <div className="mt-2 flex gap-2">
+                                        <span className="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-xs rounded">High Priority</span>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Flow Disruption - Entry Gate</span>
+                                        <span className="text-xs text-zinc-500 dark:text-zinc-400">11:15 AM</span>
+                                    </div>
+                                    <p className="text-xs text-amber-600 dark:text-amber-400/80">Entry rate dropped by 60% for 5 minutes.</p>
+                                    <div className="mt-2 flex gap-2">
+                                        <span className="px-2 py-1 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs rounded">Resolved</span>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Unusual Movement Pattern</span>
+                                        <span className="text-xs text-zinc-500 dark:text-zinc-400">10:45 AM</span>
+                                    </div>
+                                    <p className="text-xs text-purple-600 dark:text-purple-400/80">Detected counter-flow movement in Main Plaza.</p>
+                                    <div className="mt-2 flex gap-2">
+                                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs rounded">Monitoring</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+
+                {/* Footer Status */}
+                <footer className="bg-white dark:bg-zinc-800 border-t border-zinc-200 dark:border-zinc-700 px-6 py-3 flex items-center justify-between transition-colors duration-200">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Analytics Engine Active</span>
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Last updated: {new Date().toLocaleTimeString()}
+                    </div>
+                </footer>
+            </div>
         </div>
     );
 }
