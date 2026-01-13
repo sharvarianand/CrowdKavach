@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import {
     Home,
@@ -18,14 +19,15 @@ import {
 } from 'lucide-react';
 import Logo from './Logo';
 import HeatMapVisualization from './HeatMap';
-
 import { useTheme } from '@/lib/ThemeContext';
 import { AppUser } from '@/lib/types';
 
 export default function HeatMapPage({ user }: { user?: AppUser }) {
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const router = useRouter();
     const { theme, toggleTheme } = useTheme();
     const pathname = usePathname();
+    const [showProfileMenu, setShowProfileMenu] = useState(false);
 
     // Hydration-safe last updated time
     const [lastUpdated, setLastUpdated] = useState<string>("");
@@ -57,12 +59,13 @@ export default function HeatMapPage({ user }: { user?: AppUser }) {
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex transition-colors duration-200">
-
-
             {/* Sidebar */}
             <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-zinc-800 border-r border-zinc-200 dark:border-zinc-700 transition-all duration-300 flex flex-col`}>
-                {/* Logo */}
-                <div className="p-4 border-b border-zinc-100 dark:border-zinc-700">
+                {/* Logo - Click to toggle sidebar */}
+                <div
+                    className="p-4 border-b border-zinc-100 dark:border-zinc-700 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                >
                     <Logo size={sidebarOpen ? 'md' : 'sm'} showText={sidebarOpen} />
                 </div>
 
@@ -86,37 +89,6 @@ export default function HeatMapPage({ user }: { user?: AppUser }) {
                     })}
                 </nav>
 
-                {/* User & Logout */}
-                {user && sidebarOpen && (
-                    <div className="p-4 border-t border-zinc-100 dark:border-zinc-700">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
-                                <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                                    {user.firstName || user.email}
-                                </p>
-                                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user.email}</p>
-                            </div>
-                        </div>
-                        <a
-                            href="/api/auth/logout"
-                            className="flex items-center gap-2 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-sm"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            Sign Out
-                        </a>
-                    </div>
-                )}
-
-                {/* Toggle Button */}
-                <button
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="p-4 border-t border-zinc-100 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex justify-center"
-                >
-                    {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
             </aside>
 
             {/* Main Content */}
@@ -147,8 +119,27 @@ export default function HeatMapPage({ user }: { user?: AppUser }) {
                             <Bell className="w-5 h-5" />
                             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                         </button>
-                        <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
-                            <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                        <div className="relative">
+                            <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700 hover:border-emerald-400 transition-colors cursor-pointer">
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                            </button>
+                            {showProfileMenu && (
+                                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-800 rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-700 py-2 z-50">
+                                    {user && (<div className="px-4 py-2 border-b border-zinc-100 dark:border-zinc-700"><p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{user.firstName || 'User'}</p><p className="text-xs text-zinc-500 dark:text-zinc-400">{user.email}</p></div>)}
+                                    <button
+                                        onClick={async () => {
+                                            localStorage.removeItem('crowdkavach_admin_verified');
+                                            localStorage.removeItem('crowdkavach_admin_verify_time');
+                                            try { await fetch('/api/auth/logout'); } catch { }
+                                            router.push('/');
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm w-full text-left"
+                                    >
+                                        <LogOut className="w-4 h-4" />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </header>

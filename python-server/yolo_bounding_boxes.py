@@ -35,6 +35,11 @@ class Camera(BaseModel):
     url: str
     zone: str = "Main Plaza"
     enabled: bool = True
+    area: Optional[float] = None
+    areaUnit: Optional[str] = "sqm"
+    densityLevel: Optional[str] = "medium"
+    capacity: Optional[int] = None
+    useManualCapacity: bool = False
 
 
 class CameraUpdate(BaseModel):
@@ -42,6 +47,11 @@ class CameraUpdate(BaseModel):
     url: Optional[str] = None
     zone: Optional[str] = None
     enabled: Optional[bool] = None
+    area: Optional[float] = None
+    areaUnit: Optional[str] = None
+    densityLevel: Optional[str] = None
+    capacity: Optional[int] = None
+    useManualCapacity: Optional[bool] = None
 
 
 # Multi-camera state
@@ -51,6 +61,8 @@ camera_locks: Dict[str, threading.Lock] = {}
 camera_threads: Dict[str, threading.Thread] = {}
 camera_reconnect_events: Dict[str, threading.Event] = {}
 camera_stop_events: Dict[str, threading.Event] = {}
+camera_detections: Dict[str, list] = {}
+camera_last_detection_time: Dict[str, float] = {}
 
 
 def load_cameras_from_file():
@@ -104,45 +116,67 @@ def capture_loop(camera_id: str):
             continue
 
         print(f"[{camera_id}] Connecting to camera at {camera.url}...")
-        cap = cv2.VideoCapture(camera.url, cv2.CAP_FFMPEG)
+        cap = cv2.VideoCapture(camera.url)
         
-        # Optimize for minimal latency
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer
-        cap.set(cv2.CAP_PROP_FPS, 30)  # Set frame rate
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Lower resolution for speed
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-
         if not cap.isOpened():
+            # Try without any backends if FFMPEG failed (implicitly tried above)
             print(f"[{camera_id}] Failed to open camera, retrying in 5s...")
             time.sleep(5)
             continue
 
         print(f"[{camera_id}] Connected!")
+        last_yolo_time = 0
+        yolo_interval = 0.5  # Run YOLO every 500ms for each camera to save CPU
 
         while cap.isOpened():
-            # Check for stop signal
             if camera_stop_events.get(camera_id, threading.Event()).is_set():
                 break
 
-            # Check for reconnection request
             if camera_reconnect_events.get(camera_id, threading.Event()).is_set():
                 print(f"[{camera_id}] Reconnection requested...")
                 camera_reconnect_events[camera_id].clear()
                 break
 
-            # Grab frame without decoding to flush buffer (reduces latency)
-            cap.grab()
-            ret, frame = cap.retrieve()
+            ret, frame = cap.read()
             
             if ret:
+                # Store the raw frame
                 with camera_locks.get(camera_id, threading.Lock()):
                     camera_frames[camera_id] = frame
+                
+                # Periodically run YOLO
+                current_time = time.time()
+                if current_time - last_yolo_time > yolo_interval:
+                    # Run YOLO in a way that doesn't block the capture too long
+                    results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
+                    
+                    detections = []
+                    for result in results:
+                        for box in result.boxes:
+                            if int(box.cls[0]) == 0:
+                                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                                detections.append({
+                                    "x1": int(x1), "y1": int(y1), 
+                                    "x2": int(x2), "y2": int(y2),
+                                    "conf": float(box.conf[0])
+                                })
+                    
+                    camera_detections[camera_id] = detections
+                    camera_last_detection_time[camera_id] = current_time
+                    last_yolo_time = current_time
             else:
-                print(f"[{camera_id}] Stream disconnected")
-                break
+                # For MJPEG streams, sometimes read() fails but the stream is still alive
+                # We try to grab/retrieve as a fallback
+                cap.grab()
+                ret_fallback, frame_fallback = cap.retrieve()
+                if ret_fallback:
+                    with camera_locks.get(camera_id, threading.Lock()):
+                        camera_frames[camera_id] = frame_fallback
+                else:
+                    print(f"[{camera_id}] Stream disconnected")
+                    break
             
-            # Small delay to prevent CPU overload
+            # Very small sleep to prevent 100% CPU usage in the capture thread
             time.sleep(0.01)
 
         cap.release()
@@ -302,6 +336,59 @@ def delete_camera(camera_id: str):
     return {"status": "deleted", "camera_id": camera_id}
 
 
+# ============== Settings Endpoints ==============
+
+SETTINGS_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+class AppSettings(BaseModel):
+    lowBandwidthMode: bool = False
+    privacyMaskingEnabled: bool = False
+    autoRefreshInterval: int = 2000
+    showDensityOverlay: bool = True
+    alertSoundEnabled: bool = True
+    droidCamUrl: Optional[str] = ""
+
+# Global settings
+app_settings: AppSettings = AppSettings()
+
+def load_settings_from_file():
+    """Load settings from JSON file"""
+    global app_settings
+    if os.path.exists(SETTINGS_CONFIG_FILE):
+        try:
+            with open(SETTINGS_CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                app_settings = AppSettings(**data)
+                print(f"Loaded settings from file")
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+
+def save_settings_to_file():
+    """Save settings to JSON file"""
+    try:
+        with open(SETTINGS_CONFIG_FILE, "w") as f:
+            json.dump(app_settings.model_dump(), f, indent=2)
+        print("Settings saved to file")
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+
+# Load settings on startup
+load_settings_from_file()
+
+@app.get("/settings")
+def get_settings():
+    """Get current application settings"""
+    return app_settings.model_dump()
+
+@app.put("/settings")
+def update_settings(settings: AppSettings):
+    """Update application settings"""
+    global app_settings
+    app_settings = settings
+    save_settings_to_file()
+    return {"status": "updated", "settings": app_settings.model_dump()}
+
+
 # ============== Legacy Single Camera Endpoints (for backward compatibility) ==============
 
 
@@ -378,35 +465,17 @@ def get_frame(camera_id: Optional[str] = None):
 
 @app.get("/get-image-with-boxes")
 def get_image_with_boxes(camera_id: Optional[str] = None):
-    """Return image with bounding box superimposed"""
-    frame = get_frame_for_camera(camera_id)
+    """Return image with bounding boxes superimposed from cache"""
+    actual_id = camera_id
+    if not actual_id and camera_frames:
+        actual_id = list(camera_frames.keys())[0]
+        
+    frame = get_frame_for_camera(actual_id)
     if frame is None:
         return JSONResponse(content={"error": "No frame available"}, status_code=503)
 
     frame = frame.copy()
-    # Use higher confidence threshold and NMS for stable detection
-    results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
-
-    bounding_boxes = []
-    for result in results:
-        for box in result.boxes:
-            if int(box.cls[0]) == 0:  # Only class 0 (person)
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                confidence = float(box.conf[0])
-                
-                # Filter by minimum size to avoid false positives
-                width = x2 - x1
-                height = y2 - y1
-                if width > 20 and height > 40:  # Minimum person dimensions
-                    bounding_boxes.append(
-                        {
-                            "x1": int(x1),
-                            "y1": int(y1),
-                            "x2": int(x2),
-                            "y2": int(y2),
-                            "confidence": round(confidence, 3),
-                        }
-                    )
+    bounding_boxes = camera_detections.get(actual_id, [])
 
     for box in bounding_boxes:
         x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
@@ -426,62 +495,44 @@ def get_image_with_boxes(camera_id: Optional[str] = None):
 
 @app.get("/detect")
 def detect(camera_id: Optional[str] = None):
-    """Return only bounding boxes without the image"""
-    frame = get_frame_for_camera(camera_id)
-    if frame is None:
+    """Return only bounding boxes without the image using cache"""
+    # Find actual camera ID
+    actual_id = camera_id
+    if not actual_id and camera_frames:
+        actual_id = list(camera_frames.keys())[0]
+        
+    if not actual_id or actual_id not in camera_frames:
         return JSONResponse(content={"error": "No frame available"}, status_code=503)
 
-    frame = frame.copy()
-    # Use higher confidence threshold and NMS for stable detection
-    results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
-
-    bounding_boxes = []
-    for result in results:
-        for box in result.boxes:
-            if int(box.cls[0]) == 0:  # Only class 0 (person)
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                confidence = float(box.conf[0])
-                
-                # Filter by minimum size to avoid false positives
-                width = x2 - x1
-                height = y2 - y1
-                if width > 20 and height > 40:  # Minimum person dimensions
-                    bounding_boxes.append(
-                        {
-                            "x1": int(x1),
-                            "y1": int(y1),
-                            "x2": int(x2),
-                            "y2": int(y2),
-                            "confidence": round(confidence, 3),
-                        }
-                    )
+    bounding_boxes = camera_detections.get(actual_id, [])
+    
+    # Format for response
+    formatted_boxes = []
+    for det in bounding_boxes:
+        formatted_boxes.append({
+            "x1": det["x1"], "y1": det["y1"], 
+            "x2": det["x2"], "y2": det["y2"],
+            "confidence": det.get("conf", 0.0)
+        })
 
     return JSONResponse(
-        content={"persons": bounding_boxes, "person_count": len(bounding_boxes)}
+        content={"persons": formatted_boxes, "person_count": len(formatted_boxes)}
     )
 
 
 @app.get("/analytics")
 def analytics(camera_id: Optional[str] = None):
-    """Return analytics data including people count and density"""
-    frame = get_frame_for_camera(camera_id)
+    """Return analytics data including people count and density from cache"""
+    actual_id = camera_id
+    if not actual_id and camera_frames:
+        actual_id = list(camera_frames.keys())[0]
+        
+    frame = get_frame_for_camera(actual_id)
     if frame is None:
         return JSONResponse(content={"error": "No frame available"}, status_code=503)
 
-    frame = frame.copy()
-    # Use higher confidence threshold and NMS for stable detection
-    results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
-
-    person_count = 0
-    for result in results:
-        for box in result.boxes:
-            if int(box.cls[0]) == 0:  # Only class 0 (person)
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                width = x2 - x1
-                height = y2 - y1
-                # Filter by minimum size
-                if width > 20 and height > 40:
-                    person_count += 1
+    bounding_boxes = camera_detections.get(actual_id, [])
+    person_count = len(bounding_boxes)
 
     frame_height, frame_width = frame.shape[:2]
     frame_area = frame_height * frame_width
@@ -495,47 +546,33 @@ def analytics(camera_id: Optional[str] = None):
             "people_count": person_count,
             "density": density_percentage,
             "timestamp": time.time(),
-            "camera_id": camera_id or "default",
+            "camera_id": actual_id or "default",
         }
     )
 
 
 @app.get("/analytics/all")
 def analytics_all():
-    """Return aggregated analytics from all cameras"""
+    """Return aggregated analytics from all cameras using cache"""
     total_count = 0
     camera_analytics = []
 
     for cid in cameras:
+        detections = camera_detections.get(cid, [])
+        person_count = len(detections)
+        total_count += person_count
+
         frame = get_frame_for_camera(cid)
         if frame is None:
-            camera_analytics.append(
-                {
-                    "camera_id": cid,
-                    "camera_name": cameras[cid].name,
-                    "people_count": 0,
-                    "density": 0,
-                    "status": "offline",
-                }
-            )
+            camera_analytics.append({
+                "camera_id": cid,
+                "camera_name": cameras[cid].name,
+                "zone": cameras[cid].zone,
+                "people_count": 0,
+                "density": 0,
+                "status": "offline",
+            })
             continue
-
-        frame = frame.copy()
-        # Use higher confidence threshold and NMS for stable detection
-        results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
-
-        person_count = 0
-        for result in results:
-            for box in result.boxes:
-                if int(box.cls[0]) == 0:  # Only class 0 (person)
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    width = x2 - x1
-                    height = y2 - y1
-                    # Filter by minimum size
-                    if width > 20 and height > 40:
-                        person_count += 1
-
-        total_count += person_count
 
         frame_height, frame_width = frame.shape[:2]
         frame_area = frame_height * frame_width
@@ -546,16 +583,22 @@ def analytics_all():
             else 0
         )
 
-        camera_analytics.append(
-            {
-                "camera_id": cid,
-                "camera_name": cameras[cid].name,
-                "zone": cameras[cid].zone,
-                "people_count": person_count,
-                "density": density_percentage,
-                "status": "online",
-            }
-        )
+        camera_analytics.append({
+            "camera_id": cid,
+            "camera_name": cameras[cid].name,
+            "zone": cameras[cid].zone,
+            "people_count": person_count,
+            "density": density_percentage,
+            "status": "online",
+        })
+
+    return JSONResponse(
+        content={
+            "total_people_count": total_count,
+            "cameras": camera_analytics,
+            "timestamp": time.time(),
+        }
+    )
 
     return JSONResponse(
         content={
@@ -590,35 +633,38 @@ def get_zone_for_position(x_percent, y_percent):
 
 @app.get("/coordinates")
 def coordinates(camera_id: Optional[str] = None):
-    """Return lightweight coordinate data for low-bandwidth mode"""
+    """Return lightweight coordinate data for low-bandwidth mode using cached detections"""
     frame = get_frame_for_camera(camera_id)
     if frame is None:
-        return JSONResponse(content={"error": "No frame available"}, status_code=503)
+        return JSONResponse(
+            content={
+                "timestamp": int(time.time() * 1000),
+                "people": [], "count": 0, "density": 0,
+                "camera_id": camera_id or "default",
+                "error": "No frame available"
+            },
+            status_code=200
+        )
 
-    frame = frame.copy()
+    # Use actual camera ID for cache lookup
+    actual_id = camera_id
+    if not actual_id and camera_frames:
+        actual_id = list(camera_frames.keys())[0]
+        
+    detections = camera_detections.get(actual_id, [])
+    
     frame_height, frame_width = frame.shape[:2]
-
-    results = model(frame, verbose=False)
-
     people = []
-    person_id = 1
-    for result in results:
-        for box in result.boxes:
-            if int(box.cls[0]) == 0:
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                center_x = ((x1 + x2) / 2) / frame_width * 100
-                center_y = ((y1 + y2) / 2) / frame_height * 100
-                zone = get_zone_for_position(center_x, center_y)
-
-                people.append(
-                    {
-                        "id": person_id,
-                        "x": round(center_x, 1),
-                        "y": round(center_y, 1),
-                        "zone": zone,
-                    }
-                )
-                person_id += 1
+    for i, det in enumerate(detections):
+        center_x = ((det["x1"] + det["x2"]) / 2) / frame_width * 100
+        center_y = ((det["y1"] + det["y2"]) / 2) / frame_height * 100
+        zone = get_zone_for_position(center_x, center_y)
+        people.append({
+            "id": i + 1,
+            "x": round(center_x, 1),
+            "y": round(center_y, 1),
+            "zone": zone,
+        })
 
     frame_area = frame_height * frame_width
     max_capacity = frame_area / 10000
@@ -632,7 +678,7 @@ def coordinates(camera_id: Optional[str] = None):
             "people": people,
             "count": len(people),
             "density": density_percentage,
-            "camera_id": camera_id or "default",
+            "camera_id": actual_id or "default",
         }
     )
 
@@ -678,49 +724,30 @@ def stream(camera_id: Optional[str] = None):
 
 
 def generate_stream_with_boxes(camera_id: Optional[str] = None):
-    """Generator function for MJPEG streaming with bounding boxes"""
+    """Generator function for MJPEG streaming with bounding boxes from cache"""
     target_camera = camera_id
     while True:
         frame = None
-        if target_camera and target_camera in camera_frames:
-            with camera_locks.get(target_camera, threading.Lock()):
-                if camera_frames.get(target_camera) is not None:
-                    frame = camera_frames[target_camera].copy()
+        current_cid = target_camera
+        if current_cid and current_cid in camera_frames:
+            with camera_locks.get(current_cid, threading.Lock()):
+                if camera_frames.get(current_cid) is not None:
+                    frame = camera_frames[current_cid].copy()
         else:
             for cid, f in camera_frames.items():
                 if f is not None:
                     with camera_locks.get(cid, threading.Lock()):
                         frame = f.copy()
+                        current_cid = cid
                     break
 
         if frame is None:
             time.sleep(0.1)
             continue
 
-        # Use higher confidence threshold and NMS for stable detection
-        results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
-
-        bounding_boxes = []
-        for result in results:
-            for box in result.boxes:
-                if int(box.cls[0]) == 0:  # Only class 0 (person)
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    confidence = float(box.conf[0])
-                    
-                    # Filter by minimum size
-                    width = x2 - x1
-                    height = y2 - y1
-                    if width > 20 and height > 40:
-                        bounding_boxes.append(
-                        {
-                            "x1": int(x1),
-                            "y1": int(y1),
-                            "x2": int(x2),
-                            "y2": int(y2),
-                            "confidence": round(confidence, 3),
-                        }
-                    )
-
+        # Use cached detections
+        bounding_boxes = camera_detections.get(current_cid, [])
+        
         for box in bounding_boxes:
             x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -735,14 +762,14 @@ def generate_stream_with_boxes(camera_id: Optional[str] = None):
             2,
         )
 
-        # Encode with lower quality for faster streaming (60% quality)
-        encode_params = [cv2.IMWRITE_JPEG_QUALITY, 60]
+        # Encode with slightly lower quality for faster streaming
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, 65]
         _, jpeg = cv2.imencode(".jpg", frame, encode_params)
 
         yield (
             b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
         )
-        time.sleep(0.02)  # ~50 FPS max
+        time.sleep(0.04)  # ~25 FPS
 
 
 @app.get("/stream-with-boxes")
@@ -829,54 +856,47 @@ def blur_upper_body(frame, bounding_boxes):
 
 
 def generate_stream_with_privacy(camera_id: Optional[str] = None):
-    """Generator function for MJPEG streaming with privacy masking"""
+    """Generator function for MJPEG streaming with privacy masking from cache"""
     target_camera = camera_id
     while True:
         try:
             frame = None
-            if target_camera and target_camera in camera_frames:
-                with camera_locks.get(target_camera, threading.Lock()):
-                    if camera_frames.get(target_camera) is not None:
-                        frame = camera_frames[target_camera].copy()
+            current_cid = target_camera
+            if current_cid and current_cid in camera_frames:
+                with camera_locks.get(current_cid, threading.Lock()):
+                    if camera_frames.get(current_cid) is not None:
+                        frame = camera_frames[current_cid].copy()
             else:
                 for cid, f in camera_frames.items():
                     if f is not None:
                         with camera_locks.get(cid, threading.Lock()):
                             frame = f.copy()
+                            current_cid = cid
                         break
 
             if frame is None:
                 time.sleep(0.1)
                 continue
 
-            results = model(frame, verbose=False)
+            # Use cached detections
+            detections = camera_detections.get(current_cid, [])
+            
+            # Format boxes for masking
+            formatted_boxes = []
+            for det in detections:
+                formatted_boxes.append({
+                    "x1": det["x1"], 
+                    "y1": det["y1"], 
+                    "x2": det["x2"], 
+                    "y2": det["y2"]
+                })
 
-            bounding_boxes = []
-            for result in results:
-                for box in result.boxes:
-                    if int(box.cls[0]) == 0:
-                        x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        confidence = float(box.conf[0])
-                        bounding_boxes.append(
-                            {
-                                "x1": int(x1),
-                                "y1": int(y1),
-                                "x2": int(x2),
-                                "y2": int(y2),
-                                "confidence": round(confidence, 3),
-                            }
-                        )
-
-            frame, faces_blurred = blur_upper_body(frame, bounding_boxes)
-            frame, additional_faces = blur_faces(frame)
-
-            for box in bounding_boxes:
-                x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            frame, _ = blur_upper_body(frame, formatted_boxes)
+            frame, _ = blur_faces(frame)
 
             cv2.putText(
                 frame,
-                f"Persons: {len(bounding_boxes)}",
+                f"Persons: {len(detections)}",
                 (10, 40),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
@@ -893,13 +913,13 @@ def generate_stream_with_privacy(camera_id: Optional[str] = None):
                 2,
             )
 
-            _, jpeg = cv2.imencode(".jpg", frame)
+            _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
 
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
             )
-            time.sleep(0.033)
+            time.sleep(0.04)
         except Exception as e:
             print(f"Error in privacy stream: {e}")
             time.sleep(0.1)
@@ -914,7 +934,182 @@ def stream_with_privacy(camera_id: Optional[str] = None):
     )
 
 
+# ============== Alert System Endpoints ==============
+
+# Import the alert module
+try:
+    from twilio_alerts import (
+        AlertConfig as TwilioAlertConfig,
+        get_alert_config,
+        update_alert_config,
+        get_alert_history,
+        trigger_emergency_alert,
+        check_capacity_violation,
+        acknowledge_alert,
+        send_whatsapp_alert,
+    )
+    ALERTS_ENABLED = True
+except ImportError as e:
+    print(f"Alert module not available: {e}")
+    ALERTS_ENABLED = False
+
+
+class EmergencyRequest(BaseModel):
+    """Request model for emergency triggers"""
+    zone: str = "Unknown"
+    reason: str = ""
+    camera_id: str = ""
+
+
+class AlertConfigRequest(BaseModel):
+    """Request model for alert configuration"""
+    whatsappEnabled: bool = False
+    whatsappNumber: str = ""
+    alertCooldownMinutes: int = 5
+    twilioAccountSid: str = ""
+    twilioAuthToken: str = ""
+    twilioWhatsappNumber: str = "whatsapp:+14155238886"
+    prototypeMode: bool = True
+    emergencyContacts: list = []
+
+
+class CapacityCheckRequest(BaseModel):
+    """Request model for zone capacity checks"""
+    camera_id: str
+    zone: str
+    people_count: int
+    max_capacity: int
+
+
+@app.get("/api/alert/config")
+def get_alert_configuration():
+    """Get current alert configuration"""
+    if not ALERTS_ENABLED:
+        return {"error": "Alert system not available", "enabled": False}
+    
+    config = get_alert_config()
+    # Don't expose sensitive tokens in response
+    return {
+        "whatsappEnabled": config.whatsappEnabled,
+        "whatsappNumber": config.whatsappNumber,
+        "alertCooldownMinutes": config.alertCooldownMinutes,
+        "twilioConfigured": bool(config.twilioAccountSid and config.twilioAuthToken),
+        "prototypeMode": config.prototypeMode,
+        "emergencyContacts": config.emergencyContacts,
+        "enabled": True
+    }
+
+
+@app.put("/api/alert/config")
+def update_alert_configuration(config: AlertConfigRequest):
+    """Update alert configuration"""
+    if not ALERTS_ENABLED:
+        raise HTTPException(status_code=503, detail="Alert system not available")
+    
+    new_config = TwilioAlertConfig(
+        whatsappEnabled=config.whatsappEnabled,
+        whatsappNumber=config.whatsappNumber,
+        alertCooldownMinutes=config.alertCooldownMinutes,
+        twilioAccountSid=config.twilioAccountSid,
+        twilioAuthToken=config.twilioAuthToken,
+        twilioWhatsappNumber=config.twilioWhatsappNumber,
+        prototypeMode=config.prototypeMode,
+        emergencyContacts=config.emergencyContacts
+    )
+    updated = update_alert_config(new_config)
+    return {"status": "updated", "config": {
+        "whatsappEnabled": updated.whatsappEnabled,
+        "whatsappNumber": updated.whatsappNumber,
+        "alertCooldownMinutes": updated.alertCooldownMinutes,
+        "prototypeMode": updated.prototypeMode,
+    }}
+
+
+@app.post("/api/alert/emergency")
+def trigger_emergency(request: EmergencyRequest):
+    """Trigger a manual emergency alert"""
+    if not ALERTS_ENABLED:
+        raise HTTPException(status_code=503, detail="Alert system not available")
+    
+    result = trigger_emergency_alert(
+        zone=request.zone,
+        reason=request.reason or "Manual emergency trigger from CrowdKavach"
+    )
+    
+    return {
+        "status": "triggered",
+        "result": result,
+        "message": "Emergency alert triggered successfully"
+    }
+
+
+@app.post("/api/alert/test")
+def test_alert():
+    """Send a test alert to verify WhatsApp configuration"""
+    if not ALERTS_ENABLED:
+        raise HTTPException(status_code=503, detail="Alert system not available")
+    
+    result = send_whatsapp_alert(
+        alert_type="system_error",
+        zone="Test Zone",
+        reason="This is a test alert from CrowdKavach to verify your WhatsApp configuration."
+    )
+    
+    return {
+        "status": "sent" if result.get("success") else "failed",
+        "result": result
+    }
+
+
+@app.get("/api/alert/history")
+def get_alerts(limit: int = 50):
+    """Get recent alert history"""
+    if not ALERTS_ENABLED:
+        return {"alerts": [], "enabled": False}
+    
+    alerts = get_alert_history(limit)
+    return {
+        "alerts": [alert.model_dump() for alert in alerts],
+        "count": len(alerts),
+        "enabled": True
+    }
+
+
+@app.post("/api/alert/acknowledge/{alert_id}")
+def acknowledge_alert_endpoint(alert_id: str):
+    """Acknowledge an alert"""
+    if not ALERTS_ENABLED:
+        raise HTTPException(status_code=503, detail="Alert system not available")
+    
+    success = acknowledge_alert(alert_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    return {"status": "acknowledged", "alert_id": alert_id}
+
+
+@app.post("/api/alert/check-capacity")
+def check_zone_capacity(request: CapacityCheckRequest):
+    """Check if a zone has capacity violation and trigger alert if needed"""
+    if not ALERTS_ENABLED:
+        return {"checked": False, "enabled": False}
+    
+    result = check_capacity_violation(
+        zone=request.zone,
+        camera_id=request.camera_id,
+        people_count=request.people_count,
+        max_capacity=request.max_capacity
+    )
+    
+    return {
+        "checked": True,
+        "violation_detected": result is not None,
+        "alert_result": result
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

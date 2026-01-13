@@ -39,14 +39,14 @@ export default function LandingPage() {
             <a href="#about" className="text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors font-medium">About</a>
           </div>
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={toggleTheme}
               className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <button 
+            <button
               onClick={() => router.push('/dashboard')}
               className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium shadow-sm"
             >
@@ -68,7 +68,7 @@ export default function LandingPage() {
             <span className="text-emerald-600 dark:text-emerald-400"> Monitoring</span>
           </h1>
           <p className="text-xl text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Advanced AI-powered crowd detection and safety management system. 
+            Advanced AI-powered crowd detection and safety management system.
             Monitor, analyze, and protect your spaces in real-time.
           </p>
           <div className="flex items-center justify-center gap-4">
@@ -81,7 +81,7 @@ export default function LandingPage() {
               Get Started
               <ArrowRight className={`w-5 h-5 transition-transform ${isHovered ? 'translate-x-1' : ''}`} />
             </button>
-            <button 
+            <button
               onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
               className="px-8 py-4 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all font-semibold text-lg border border-zinc-200 dark:border-zinc-700"
             >

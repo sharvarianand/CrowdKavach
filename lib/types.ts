@@ -49,8 +49,9 @@ export interface Camera {
     // Area configuration for capacity calculation
     area?: number; // Physical area in square meters or square feet
     areaUnit?: AreaUnit; // Square meters or square feet
-    capacity?: number; // Calculated max safe capacity
+    capacity?: number; // Calculated or manual max safe capacity
     densityLevel?: DensityLevel; // Crowd density standard to use
+    useManualCapacity?: boolean; // Whether to use manual capacity instead of calculated
 }
 
 /**

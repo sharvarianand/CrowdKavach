@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getSignUpUrl, getSignInUrl, withAuth } from '@workos-inc/authkit-nextjs';
 import DashboardUI from '@/components/DashboardUI';
+import AdminVerifyWrapper from '@/components/AdminVerifyWrapper';
 
 // Separate component for unauthenticated view
 function UnauthenticatedView({ signInUrl, signUpUrl }: { signInUrl: string; signUpUrl: string }) {
@@ -42,7 +43,7 @@ export default async function DashboardPage() {
   try {
     const authResult = await withAuth();
     user = authResult.user;
-    
+
     if (!user) {
       signInUrl = await getSignInUrl();
       signUpUrl = await getSignUpUrl();
@@ -60,5 +61,7 @@ export default async function DashboardPage() {
     return <UnauthenticatedView signInUrl={signInUrl} signUpUrl={signUpUrl} />;
   }
 
-  return <DashboardUI user={user} />;
+  // User is authenticated via WorkOS, now check admin verification
+  // This client component will check localStorage for admin verification
+  return <AdminVerifyWrapper user={user} />;
 }

@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { ThemeProvider } from "@/lib/ThemeContext";
+import GlobalClientComponents from "@/components/GlobalClientComponents";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -38,9 +39,14 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 antialiased transition-colors duration-200`}>
         <AuthKitProvider>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            <GlobalClientComponents>
+              {children}
+            </GlobalClientComponents>
+          </ThemeProvider>
         </AuthKitProvider>
       </body>
     </html>
   );
 }
+

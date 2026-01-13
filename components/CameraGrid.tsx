@@ -20,6 +20,7 @@ interface CameraConfig {
 interface CameraStats {
   count: number;
   density: number;
+  people: any[];
 }
 
 // Risk assessment based on people count and capacity
@@ -34,7 +35,7 @@ interface RiskAssessment {
 
 function assessRisk(count: number, capacity: number): RiskAssessment {
   const percentage = Math.round((count / capacity) * 100);
-  
+
   if (percentage >= 90) {
     return {
       level: 'critical',
@@ -74,9 +75,8 @@ function assessRisk(count: number, capacity: number): RiskAssessment {
   }
 }
 
-export default function CameraGrid({ className = '' }: { className?: string }) {
+export default function CameraGrid({ className = '', settings }: { className?: string; settings?: any }) {
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
-  const [cameraStats, setCameraStats] = useState<CameraStats>({ count: 0, density: 0 });
   const [isMounted, setIsMounted] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
 
@@ -114,30 +114,6 @@ export default function CameraGrid({ className = '' }: { className?: string }) {
     return () => clearInterval(interval);
   }, [serverUrl]);
 
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const fetchStats = async () => {
-      try {
-        const response = await fetch(`${serverUrl}/coordinates`);
-        if (response.ok) {
-          const data = await response.json();
-          setCameraStats({
-            count: data.count || data.people?.length || 0,
-            density: data.density || 0,
-          });
-          setServerConnected(true);
-        }
-      } catch {
-        setServerConnected(false);
-      }
-    };
-
-    fetchStats();
-    const interval = setInterval(fetchStats, 1000);
-    return () => clearInterval(interval);
-  }, [serverUrl, isMounted]);
-
   const getDensityColor = (density: number) => {
     if (density > 70) return 'text-red-500';
     if (density > 40) return 'text-amber-500';
@@ -158,8 +134,8 @@ export default function CameraGrid({ className = '' }: { className?: string }) {
     );
   }
 
-  const liveCameras = cameras.filter(c => c.type === 'live' && c.enabled);
-  const offlineCameras = cameras.filter(c => c.type !== 'live' || !c.enabled);
+  const liveCameras = cameras.filter(c => c.enabled && (c.type === 'live' || c.type === undefined));
+  const offlineCameras = cameras.filter(c => !c.enabled || c.type === 'offline');
 
   return (
     <div className={`bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 shadow-sm overflow-hidden transition-colors duration-200 ${className}`}>
@@ -194,10 +170,10 @@ export default function CameraGrid({ className = '' }: { className?: string }) {
           <LiveCameraFeed
             key={camera.id}
             camera={camera}
-            stats={cameraStats}
             serverUrl={serverUrl}
             getDensityColor={getDensityColor}
             getDensityBgColor={getDensityBgColor}
+            settings={settings}
           />
         ))}
 
@@ -230,23 +206,125 @@ export default function CameraGrid({ className = '' }: { className?: string }) {
 // Live Camera Feed Component
 interface LiveCameraFeedProps {
   camera: CameraConfig;
-  stats: CameraStats;
   serverUrl: string;
   getDensityColor: (density: number) => string;
   getDensityBgColor: (density: number) => string;
+  settings?: any;
 }
 
-function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityBgColor }: LiveCameraFeedProps) {
+function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor, settings }: LiveCameraFeedProps) {
+  const [cameraStats, setCameraStats] = useState<CameraStats>({ count: 0, density: 0, people: [] });
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
+  const [alertTriggered, setAlertTriggered] = useState(false);
+  const lastAlertTimeRef = React.useRef<number>(0);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
-  // Direct MJPEG stream URL from Python server
-  const videoFeedUrl = `${serverUrl}/video_feed`;
-  
+  // Determine stream endpoint based on settings
+  const privacyEnabled = settings?.privacyMaskingEnabled;
+  const lowBandwidth = settings?.lowBandwidthMode;
+
+  const videoFeedUrl = privacyEnabled
+    ? `${serverUrl}/stream-with-privacy?camera_id=${camera.id}`
+    : `${serverUrl}/stream-with-boxes?camera_id=${camera.id}`;
+
   // Calculate risk based on camera capacity
-  const capacity = camera.capacity || 50;
-  const risk = assessRisk(stats.count, capacity);
+  const capacity = camera.capacity ?? 50;
+  const isNoEntryZone = capacity === 0;
+  const risk = assessRisk(cameraStats.count, capacity === 0 ? 1 : capacity); // Avoid division by zero
+
+  // Polling for camera-specific coordinates
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch(`${serverUrl}/coordinates?camera_id=${camera.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setCameraStats({
+            count: data.count || data.people?.length || 0,
+            density: data.density || 0,
+            people: data.people || [],
+          });
+        }
+      } catch (err) {
+        console.error(`Feed ${camera.id}: Failed to fetch coordinates`, err);
+      }
+    };
+
+    // Only poll if enabled and in low bandwidth mode (or always if we want detection stats in overlay)
+    // For now always poll to keep the stats overlay updated
+    fetchStats();
+    const interval = setInterval(fetchStats, 1000);
+    return () => clearInterval(interval);
+  }, [serverUrl, camera.id]);
+
+  // Initialize audio element for alarm sound
+  React.useEffect(() => {
+    // Create audio element for alarm (using a simple beep sound)
+    audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onrm/wMDAv7+/v7/AwMDBwb+/wMDAv7+/wMG/v8DCwcHBwsLCwsLBwcHBwcHBwcHAwMDAwMDAwMHBwcHBwcHAwMDAwMHBwcHCwsLCw8PDw8PDw8PDw8LCwsLCwsLCwsLCwsLBwcHBwcHBwcLCwsLCwsLDw8PDxMTExMTExMTExMTExMTDw8PDw8PDw8PDw8LCwsLCwsHBwcHBwcHBwMDAwMDAwMDAwMHBwcHBwcHBwcHBwcHBwcHBwcDAwMDAwMDAwMC/v7+/v7+/v7+/v7+/v7+/v7+/vMDAwMDAwMDAwMDAwMDAwMDAwMDAwMHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwQ==');
+    audioRef.current.volume = 0.5;
+  }, []);
+
+  // Auto-detection alert: Check if capacity exceeded and trigger WhatsApp alert
+  React.useEffect(() => {
+    const checkAndTriggerAlert = async () => {
+      const now = Date.now();
+      const alertCooldown = 60000; // 1 minute cooldown for auto-detection (separate from server cooldown)
+
+      // Check if we should trigger an alert
+      const shouldAlert = (
+        (isNoEntryZone && cameraStats.count > 0) || // No-entry zone violation
+        (!isNoEntryZone && cameraStats.count > capacity) // Overcrowding
+      );
+
+      if (shouldAlert && !alertTriggered && (now - lastAlertTimeRef.current > alertCooldown)) {
+        setAlertTriggered(true);
+        lastAlertTimeRef.current = now;
+
+        // Play alarm sound for critical alerts
+        if (audioRef.current) {
+          try {
+            audioRef.current.loop = true;
+            await audioRef.current.play();
+            // Stop after 3 seconds
+            setTimeout(() => {
+              if (audioRef.current) {
+                audioRef.current.loop = false;
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+              }
+            }, 3000);
+          } catch (e) {
+            console.log('Audio play failed (user interaction required):', e);
+          }
+        }
+
+        // Trigger WhatsApp alert via API
+        try {
+          const alertType = isNoEntryZone ? 'no_entry_violation' : 'overcrowding';
+          await fetch(`${serverUrl}/api/alert/check-capacity`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              camera_id: camera.id,
+              zone: camera.zone || camera.name,
+              people_count: cameraStats.count,
+              max_capacity: capacity
+            })
+          });
+          console.log(`[AUTO-ALERT] ${alertType} alert triggered for ${camera.zone}`);
+        } catch (err) {
+          console.error('Failed to trigger auto-detection alert:', err);
+        }
+
+        // Reset alert state after cooldown
+        setTimeout(() => setAlertTriggered(false), alertCooldown);
+      }
+    };
+
+    checkAndTriggerAlert();
+  }, [cameraStats.count, capacity, isNoEntryZone, alertTriggered, serverUrl, camera.id, camera.zone, camera.name]);
 
   const handleRetry = () => {
     setHasError(false);
@@ -266,11 +344,39 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
 
   return (
     <div className="relative bg-zinc-900 overflow-hidden aspect-4/3">
-      {!hasError ? (
+      {lowBandwidth ? (
+        <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center p-4">
+          <div className="relative w-full aspect-4/3 bg-zinc-950/50 rounded-lg border border-zinc-800/50 overflow-hidden">
+            {/* Simple Grid Lines */}
+            <div className="absolute inset-0 grid grid-cols-10 grid-rows-10 opacity-10">
+              {[...Array(100)].map((_, i) => (
+                <div key={i} className="border-[0.5px] border-emerald-500"></div>
+              ))}
+            </div>
+
+            {/* Coordinate Dots */}
+            {cameraStats.people?.map((person: any) => (
+              <div
+                key={person.id}
+                className="absolute w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] transition-all duration-300"
+                style={{
+                  left: `${person.x}%`,
+                  top: `${person.y}%`,
+                  transform: 'translate(-50%, -50%)'
+                }}
+              />
+            ))}
+
+            <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 rounded text-[9px] text-zinc-400 font-mono">
+              LOW-BW MODE ACTIVE: VISUALIZING {cameraStats.count} DETECTIONS
+            </div>
+          </div>
+        </div>
+      ) : !hasError ? (
         <>
           {/* MJPEG Stream - key forces re-render on retry */}
           <img
-            key={`feed-${retryCount}`}
+            key={`feed-${retryCount}-${privacyEnabled}`}
             src={videoFeedUrl}
             alt={camera.name}
             className="w-full h-full object-cover"
@@ -284,7 +390,7 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
               setHasError(true);
             }}
           />
-          
+
           {isLoading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-10">
               <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin mb-2" />
@@ -298,7 +404,7 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
           <WifiOff className="w-10 h-10 mb-2" />
           <span className="text-sm font-medium">Cannot connect to feed</span>
           <span className="text-xs mt-1 text-zinc-500">Ensure Python server is running</span>
-          <button 
+          <button
             onClick={handleRetry}
             className="mt-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium transition-colors"
           >
@@ -325,14 +431,28 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
       {/* Bottom Overlay - Stats with Risk Assessment */}
       {!hasError && !isLoading && (
         <div className="absolute bottom-0 left-0 right-0 z-20">
+          {/* Alert Triggered Banner - shows when WhatsApp alert was sent */}
+          {alertTriggered && (
+            <div className="px-2.5 py-1.5 bg-green-600 flex items-center justify-center gap-2 animate-pulse">
+              <span className="text-xs font-bold text-white">📱 WHATSAPP ALERT SENT!</span>
+            </div>
+          )}
+
           {/* Risk Alert Banner - shows when medium or higher */}
-          {(risk.level === 'medium' || risk.level === 'high' || risk.level === 'critical') && (
+          {!alertTriggered && (risk.level === 'medium' || risk.level === 'high' || risk.level === 'critical') && (
             <div className={`px-2.5 py-1.5 ${risk.level === 'critical' ? 'bg-red-600 animate-pulse' : risk.level === 'high' ? 'bg-orange-600' : 'bg-amber-600'} flex items-center justify-center gap-2`}>
               <AlertTriangle className="w-3.5 h-3.5 text-white" />
               <span className="text-xs font-bold text-white">{risk.message}</span>
             </div>
           )}
-          
+
+          {/* No Entry Zone Banner */}
+          {isNoEntryZone && cameraStats.count > 0 && !alertTriggered && (
+            <div className="px-2.5 py-1.5 bg-red-700 animate-pulse flex items-center justify-center gap-2">
+              <span className="text-xs font-bold text-white">🚫 RESTRICTED ZONE BREACH!</span>
+            </div>
+          )}
+
           {/* Stats Bar */}
           <div className="p-2.5 bg-linear-to-t from-black/90 to-black/60">
             <div className="flex items-center justify-between mb-2">
@@ -340,17 +460,16 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5 bg-black/40 rounded-lg px-2 py-1">
                   <Users className="w-4 h-4 text-white/80" />
-                  <span className="text-lg font-bold text-white">{stats.count}</span>
+                  <span className="text-lg font-bold text-white">{cameraStats.count}</span>
                   <span className="text-xs text-white/60">/ {capacity}</span>
                 </div>
-                
+
                 {/* Risk Level Badge */}
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg ${
-                  risk.level === 'critical' ? 'bg-red-500/30 border border-red-500' :
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg ${risk.level === 'critical' ? 'bg-red-500/30 border border-red-500' :
                   risk.level === 'high' ? 'bg-orange-500/30 border border-orange-500' :
-                  risk.level === 'medium' ? 'bg-amber-500/30 border border-amber-500' :
-                  'bg-emerald-500/30 border border-emerald-500'
-                }`}>
+                    risk.level === 'medium' ? 'bg-amber-500/30 border border-amber-500' :
+                      'bg-emerald-500/30 border border-emerald-500'
+                  }`}>
                   {risk.level === 'low' ? (
                     <ShieldCheck className={`w-3.5 h-3.5 ${risk.color}`} />
                   ) : (
@@ -359,13 +478,13 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
                   <span className={`text-xs font-bold uppercase ${risk.color}`}>{risk.level}</span>
                 </div>
               </div>
-              
+
               <Maximize2 className="w-4 h-4 text-white/60 cursor-pointer hover:text-white transition-colors" />
             </div>
-            
+
             {/* Capacity Progress Bar */}
             <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-              <div 
+              <div
                 className={`h-full transition-all duration-500 ${risk.bgColor}`}
                 style={{ width: `${Math.min(risk.percentage, 100)}%` }}
               />
@@ -384,10 +503,10 @@ function LiveCameraFeed({ camera, stats, serverUrl, getDensityColor, getDensityB
 // Offline Camera Placeholder
 function OfflineCameraPlaceholder({ camera }: { camera: CameraConfig }) {
   const capacity = camera.capacity || 50;
-  const areaDisplay = camera.area 
+  const areaDisplay = camera.area
     ? `${camera.area} ${camera.areaUnit === 'sqft' ? 'ft²' : 'm²'}`
     : 'Not configured';
-  
+
   return (
     <div className="relative bg-zinc-800 overflow-hidden aspect-4/3">
       <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">

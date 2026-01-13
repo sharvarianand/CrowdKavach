@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import {
     Home,
@@ -56,6 +57,8 @@ interface NewCameraForm {
     area: number;
     areaUnit: AreaUnit;
     densityLevel: DensityLevel;
+    useManualCapacity: boolean;
+    manualCapacity: number;
 }
 
 const defaultSettings: SettingsData = {
@@ -74,7 +77,9 @@ const defaultNewCamera: NewCameraForm = {
     zone: 'Main Plaza',
     area: 100,
     areaUnit: 'sqm',
-    densityLevel: 'medium'
+    densityLevel: 'medium',
+    useManualCapacity: false,
+    manualCapacity: 150
 };
 
 const zones = ['Main Plaza', 'Entry Gate', 'Exit Gate', 'Stage Area', 'Food Court', 'Parking', 'VIP Area'];
@@ -87,9 +92,11 @@ const densityLevelDescriptions = {
 
 export default function SettingsPage({ user }: { user?: AppUser }) {
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const router = useRouter();
     const [currentTime, setCurrentTime] = useState('');
     const { theme, toggleTheme } = useTheme();
     const pathname = usePathname();
+    const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [settings, setSettings] = useState<SettingsData>(defaultSettings);
     const [saved, setSaved] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
@@ -99,6 +106,15 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
     const [cameraLoading, setCameraLoading] = useState(false);
     const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<NewCameraForm>(defaultNewCamera);
+
+    // Custom zones state
+    const [customZones, setCustomZones] = useState<string[]>([]);
+    const [showAddZoneInput, setShowAddZoneInput] = useState(false);
+    const [showEditZoneInput, setShowEditZoneInput] = useState(false);
+    const [newCustomZoneName, setNewCustomZoneName] = useState('');
+
+    // Combined zones list
+    const allZones = Array.from(new Set([...zones, ...customZones]));
 
     const baseUrl = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || 'http://localhost:8000';
 
@@ -126,27 +142,53 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
             const response = await fetch(`${baseUrl}/cameras`);
             if (response.ok) {
                 const data = await response.json();
-                setCameras(data.cameras || []);
+                const fetchedCameras = data.cameras || [];
+                setCameras(fetchedCameras);
+
+                // Extract unique zones that aren't in the default list
+                const detectedZones = fetchedCameras
+                    .map((c: Camera) => c.zone)
+                    .filter((z: string) => z && !zones.includes(z));
+
+                if (detectedZones.length > 0) {
+                    setCustomZones(prev => Array.from(new Set([...prev, ...detectedZones])));
+                }
             }
         } catch (err) {
             console.error('Failed to fetch cameras:', err);
         }
     };
 
-    // Load settings from localStorage
+    // Load settings from backend (with localStorage fallback)
     useEffect(() => {
-        const savedSettings = localStorage.getItem('crowdkavach_settings');
-        if (savedSettings) {
+        const loadSettings = async () => {
             try {
-                setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
-            } catch {
-                console.error('Failed to parse settings');
+                // Try to fetch from backend first
+                const response = await fetch(`${baseUrl}/settings`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setSettings(prev => ({ ...prev, ...data }));
+                    console.log('Settings loaded from backend');
+                    return;
+                }
+            } catch (err) {
+                console.error('Failed to fetch settings from backend:', err);
             }
-        }
 
-        // Fetch cameras from backend
+            // Fallback to localStorage
+            const savedSettings = localStorage.getItem('crowdkavach_settings');
+            if (savedSettings) {
+                try {
+                    setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
+                } catch {
+                    console.error('Failed to parse settings');
+                }
+            }
+        };
+
+        loadSettings();
         fetchCameras();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Update time
@@ -164,6 +206,24 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
     };
 
     const saveSettings = async () => {
+        try {
+            // Save to backend
+            const response = await fetch(`${baseUrl}/settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+
+            if (response.ok) {
+                console.log('Settings saved to backend');
+            } else {
+                console.error('Failed to save settings to backend');
+            }
+        } catch (err) {
+            console.error('Failed to save settings:', err);
+        }
+
+        // Also save to localStorage as fallback
         localStorage.setItem('crowdkavach_settings', JSON.stringify(settings));
         setSaved(true);
         setHasChanges(false);
@@ -176,14 +236,15 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
             alert('Please fill in all required fields');
             return;
         }
-        
+
         if (!newCamera.area || newCamera.area <= 0) {
             alert('Please enter a valid area for the monitored zone');
             return;
         }
 
-        // Calculate capacity from area
-        const capacity = calculateCapacity(newCamera.area, newCamera.areaUnit, newCamera.densityLevel);
+        // Calculate capacity from area or use manual override
+        const calculatedCapacity = calculateCapacity(newCamera.area, newCamera.areaUnit, newCamera.densityLevel);
+        const capacity = newCamera.useManualCapacity ? newCamera.manualCapacity : calculatedCapacity;
 
         setCameraLoading(true);
         try {
@@ -199,7 +260,8 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
                     area: newCamera.area,
                     areaUnit: newCamera.areaUnit,
                     densityLevel: newCamera.densityLevel,
-                    capacity: capacity
+                    capacity: capacity,
+                    useManualCapacity: newCamera.useManualCapacity
                 })
             });
 
@@ -261,6 +323,9 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
 
     const startEditingCamera = (camera: Camera) => {
         setEditingCameraId(camera.id);
+        const calculatedCap = calculateCapacity(camera.area || 100, camera.areaUnit || 'sqm', camera.densityLevel || 'medium');
+        const isManual = camera.capacity !== undefined && camera.capacity !== calculatedCap;
+
         setEditForm({
             id: camera.id,
             name: camera.name,
@@ -268,15 +333,18 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
             zone: camera.zone,
             area: camera.area || 100,
             areaUnit: camera.areaUnit || 'sqm',
-            densityLevel: camera.densityLevel || 'medium'
+            densityLevel: camera.densityLevel || 'medium',
+            useManualCapacity: camera.useManualCapacity || false,
+            manualCapacity: camera.capacity !== undefined ? camera.capacity : calculatedCap
         });
     };
 
     const saveEditedCamera = async () => {
         if (!editingCameraId) return;
-        
-        const capacity = calculateCapacity(editForm.area, editForm.areaUnit, editForm.densityLevel);
-        
+
+        const calculatedCapacity = calculateCapacity(editForm.area, editForm.areaUnit, editForm.densityLevel);
+        const capacity = editForm.useManualCapacity ? editForm.manualCapacity : calculatedCapacity;
+
         await updateCamera(editingCameraId, {
             name: editForm.name,
             url: editForm.url,
@@ -284,9 +352,10 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
             area: editForm.area,
             areaUnit: editForm.areaUnit,
             densityLevel: editForm.densityLevel,
-            capacity: capacity
+            capacity: capacity,
+            useManualCapacity: editForm.useManualCapacity
         });
-        
+
         setEditingCameraId(null);
         setEditForm(defaultNewCamera);
     };
@@ -308,8 +377,11 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
 
             {/* Sidebar */}
             <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-zinc-800 border-r border-zinc-200 dark:border-zinc-700 transition-all duration-300 flex flex-col`}>
-                {/* Logo */}
-                <div className="p-4 border-b border-zinc-100 dark:border-zinc-700">
+                {/* Logo - Click to toggle sidebar */}
+                <div
+                    className="p-4 border-b border-zinc-100 dark:border-zinc-700 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                >
                     <Logo size={sidebarOpen ? 'md' : 'sm'} showText={sidebarOpen} />
                 </div>
 
@@ -333,37 +405,6 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
                     })}
                 </nav>
 
-                {/* User & Logout */}
-                {user && sidebarOpen && (
-                    <div className="p-4 border-t border-zinc-100 dark:border-zinc-700">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
-                                <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                                    {user.firstName || user.email}
-                                </p>
-                                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user.email}</p>
-                            </div>
-                        </div>
-                        <a
-                            href="/api/auth/logout"
-                            className="flex items-center gap-2 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-sm"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            Sign Out
-                        </a>
-                    </div>
-                )}
-
-                {/* Toggle Button */}
-                <button
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="p-4 border-t border-zinc-100 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex justify-center"
-                >
-                    {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
             </aside>
 
             {/* Main Content */}
@@ -407,8 +448,36 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
                             <Bell className="w-5 h-5" />
                             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                         </button>
-                        <div className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
-                            <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                        {/* Profile Dropdown */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                                className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center border border-emerald-200 dark:border-emerald-700 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors cursor-pointer"
+                            >
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium text-sm">{getUserInitials()}</span>
+                            </button>
+                            {showProfileMenu && (
+                                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-800 rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-700 py-2 z-50">
+                                    {user && (
+                                        <div className="px-4 py-2 border-b border-zinc-100 dark:border-zinc-700">
+                                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{user.firstName || 'User'}</p>
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{user.email}</p>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={async () => {
+                                            localStorage.removeItem('crowdkavach_admin_verified');
+                                            localStorage.removeItem('crowdkavach_admin_verify_time');
+                                            try { await fetch('/api/auth/logout'); } catch { }
+                                            router.push('/');
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm w-full text-left"
+                                    >
+                                        <LogOut className="w-4 h-4" />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </header>
@@ -460,514 +529,672 @@ export default function SettingsPage({ user }: { user?: AppUser }) {
                                             </button>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Camera ID *</label>
-                                            <input
-                                                type="text"
-                                                value={newCamera.id}
-                                                onChange={(e) => setNewCamera({ ...newCamera, id: e.target.value })}
-                                                placeholder="cam-1"
-                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Camera Name *</label>
-                                            <input
-                                                type="text"
-                                                value={newCamera.name}
-                                                onChange={(e) => setNewCamera({ ...newCamera, name: e.target.value })}
-                                                placeholder="Main Plaza Camera"
-                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                            />
-                                        </div>
-                                        <div className="col-span-2">
-                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Stream URL * (DroidCam IP)</label>
-                                            <input
-                                                type="text"
-                                                value={newCamera.url}
-                                                onChange={(e) => setNewCamera({ ...newCamera, url: e.target.value })}
-                                                placeholder="http://192.168.1.100:4747/video"
-                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                            />
-                                            <p className="text-[10px] text-amber-600 dark:text-amber-400/70 mt-1 flex items-center gap-1">
-                                                ⚠️ Laptop and DroidCam must be on the same local network (same IP range)
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Zone</label>
-                                            <select
-                                                value={newCamera.zone}
-                                                onChange={(e) => setNewCamera({ ...newCamera, zone: e.target.value })}
-                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                            >
-                                                {zones.map(zone => (
-                                                    <option key={zone} value={zone}>{zone}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        
-                                        {/* Area Configuration Section */}
-                                        <div className="col-span-2 mt-2 pt-4 border-t border-zinc-300 dark:border-zinc-600">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <Ruler className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Area Configuration</span>
-                                                <span className="text-[10px] text-zinc-500">(One-time setup for capacity calculation)</span>
+                                            <div>
+                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Camera ID *</label>
+                                                <input
+                                                    type="text"
+                                                    value={newCamera.id}
+                                                    onChange={(e) => setNewCamera({ ...newCamera, id: e.target.value })}
+                                                    placeholder="cam-1"
+                                                    className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                />
                                             </div>
-                                            
-                                            <div className="grid grid-cols-3 gap-3">
-                                                <div>
-                                                    <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Physical Area *</label>
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        value={newCamera.area}
-                                                        onChange={(e) => setNewCamera({ ...newCamera, area: parseFloat(e.target.value) || 0 })}
-                                                        placeholder="100"
-                                                        className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Unit</label>
-                                                    <select
-                                                        value={newCamera.areaUnit}
-                                                        onChange={(e) => setNewCamera({ ...newCamera, areaUnit: e.target.value as AreaUnit })}
-                                                        className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                                    >
-                                                        <option value="sqm">Square Meters (m²)</option>
-                                                        <option value="sqft">Square Feet (ft²)</option>
-                                                    </select>
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Crowd Density</label>
-                                                    <select
-                                                        value={newCamera.densityLevel}
-                                                        onChange={(e) => setNewCamera({ ...newCamera, densityLevel: e.target.value as DensityLevel })}
-                                                        className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                                    >
-                                                        <option value="low">Low - Comfortable</option>
-                                                        <option value="medium">Medium - Normal</option>
-                                                        <option value="high">High - Max Safe</option>
-                                                    </select>
-                                                </div>
+                                            <div>
+                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Camera Name *</label>
+                                                <input
+                                                    type="text"
+                                                    value={newCamera.name}
+                                                    onChange={(e) => setNewCamera({ ...newCamera, name: e.target.value })}
+                                                    placeholder="Main Plaza Camera"
+                                                    className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                />
                                             </div>
-                                            
-                                            <p className="text-[10px] text-zinc-500 mt-2">
-                                                {densityLevelDescriptions[newCamera.densityLevel]}
-                                            </p>
-                                            
-                                            {/* Capacity Preview */}
-                                            <div className="mt-3 p-3 bg-white dark:bg-zinc-800 rounded-lg border border-emerald-500/30 flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Calculator className="w-4 h-4 text-emerald-500" />
-                                                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Calculated Max Capacity:</span>
-                                                </div>
-                                                <span className="text-lg font-bold text-emerald-500">
-                                                    {calculateCapacity(newCamera.area, newCamera.areaUnit, newCamera.densityLevel)} people
-                                                </span>
+                                            <div className="col-span-2">
+                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Stream URL * (DroidCam IP)</label>
+                                                <input
+                                                    type="text"
+                                                    value={newCamera.url}
+                                                    onChange={(e) => setNewCamera({ ...newCamera, url: e.target.value })}
+                                                    placeholder="http://192.168.1.100:4747/video"
+                                                    className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                />
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-400/70 mt-1 flex items-center gap-1">
+                                                    ⚠️ Laptop and DroidCam must be on the same local network (same IP range)
+                                                </p>
                                             </div>
-                                        </div>
-                                        
-                                        <div className="col-span-2 flex items-end">
-                                            <button
-                                                onClick={addCamera}
-                                                disabled={cameraLoading}
-                                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
-                                            >
-                                                {cameraLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                                Add Camera
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Camera List */}
-                            <div className="space-y-3">
-                                {cameras.length === 0 ? (
-                                    <div className="text-center py-8 text-zinc-500">
-                                        <Video className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                                        <p>No cameras configured</p>
-                                        <p className="text-sm">Click &quot;Add Camera&quot; to get started</p>
-                                    </div>
-                                ) : (
-                                    cameras.map((camera) => (
-                                        <div
-                                            key={camera.id}
-                                            className={`p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border transition-colors ${camera.enabled ? 'border-zinc-200 dark:border-zinc-600' : 'border-zinc-300 dark:border-zinc-700 opacity-60'
-                                                }`}
-                                        >
-                                            {editingCameraId === camera.id ? (
-                                                /* Edit Form */
-                                                <div className="space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <h4 className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                                                            <Pencil className="w-4 h-4" />
-                                                            Edit Camera
-                                                        </h4>
-                                                        <button onClick={cancelEditing} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
+                                            <div>
+                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Zone</label>
+                                                {showAddZoneInput ? (
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={newCustomZoneName}
+                                                            onChange={(e) => setNewCustomZoneName(e.target.value)}
+                                                            placeholder="Enter zone name"
+                                                            autoFocus
+                                                            className="flex-1 bg-white dark:bg-zinc-800 border border-emerald-500 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const z = newCustomZoneName.trim();
+                                                                    if (z) {
+                                                                        setCustomZones(prev => Array.from(new Set([...prev, z])));
+                                                                        setNewCamera({ ...newCamera, zone: z });
+                                                                        setShowAddZoneInput(false);
+                                                                        setNewCustomZoneName('');
+                                                                    }
+                                                                } else if (e.key === 'Escape') {
+                                                                    setShowAddZoneInput(false);
+                                                                    setNewCustomZoneName('');
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                setShowAddZoneInput(false);
+                                                                setNewCustomZoneName('');
+                                                            }}
+                                                            className="p-2 text-zinc-400 hover:text-zinc-600"
+                                                        >
                                                             <X className="w-4 h-4" />
                                                         </button>
                                                     </div>
-                                                    
-                                                    <div className="grid grid-cols-2 gap-3">
-                                                        <div>
-                                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Camera Name</label>
-                                                            <input
-                                                                type="text"
-                                                                value={editForm.name}
-                                                                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                                            />
+                                                ) : (
+                                                    <div className="flex gap-2">
+                                                        <select
+                                                            value={newCamera.zone}
+                                                            onChange={(e) => setNewCamera({ ...newCamera, zone: e.target.value })}
+                                                            className="flex-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                        >
+                                                            {allZones.map(zone => (
+                                                                <option key={zone} value={zone}>{zone}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button
+                                                            onClick={(e) => { e.preventDefault(); setShowAddZoneInput(true); }}
+                                                            className="p-2 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg text-emerald-600 dark:text-emerald-400 transition-colors"
+                                                            title="New Zone"
+                                                        >
+                                                            <Plus className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Area Configuration Section */}
+                                            <div className="col-span-2 mt-2 pt-4 border-t border-zinc-300 dark:border-zinc-600">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Ruler className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                                    <span className="text-sm font-medium text-zinc-900 dark:text-white">Area Configuration</span>
+                                                    <span className="text-[10px] text-zinc-500">(One-time setup for capacity calculation)</span>
+                                                </div>
+
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div>
+                                                        <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Physical Area *</label>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            value={newCamera.area}
+                                                            onChange={(e) => setNewCamera({ ...newCamera, area: parseFloat(e.target.value) || 0 })}
+                                                            placeholder="100"
+                                                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Unit</label>
+                                                        <select
+                                                            value={newCamera.areaUnit}
+                                                            onChange={(e) => setNewCamera({ ...newCamera, areaUnit: e.target.value as AreaUnit })}
+                                                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                        >
+                                                            <option value="sqm">Square Meters (m²)</option>
+                                                            <option value="sqft">Square Feet (ft²)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Crowd Density</label>
+                                                        <select
+                                                            value={newCamera.densityLevel}
+                                                            onChange={(e) => setNewCamera({ ...newCamera, densityLevel: e.target.value as DensityLevel })}
+                                                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                        >
+                                                            <option value="low">Low - Comfortable</option>
+                                                            <option value="medium">Medium - Normal</option>
+                                                            <option value="high">High - Max Safe</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <p className="text-[10px] text-zinc-500 mt-2">
+                                                    {densityLevelDescriptions[newCamera.densityLevel]}
+                                                </p>
+
+                                                {/* Capacity Section with Auto/Manual Toggle */}
+                                                <div className="mt-3 p-3 bg-white dark:bg-zinc-800 rounded-lg border border-emerald-500/30">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <Calculator className="w-4 h-4 text-emerald-500" />
+                                                            <span className="text-xs text-zinc-500 dark:text-zinc-400">Max Capacity:</span>
                                                         </div>
-                                                        <div>
-                                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Zone</label>
-                                                            <select
-                                                                value={editForm.zone}
-                                                                onChange={(e) => setEditForm({ ...editForm, zone: e.target.value })}
-                                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-xs ${!newCamera.useManualCapacity ? 'text-emerald-500 font-medium' : 'text-zinc-400'}`}>Auto</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setNewCamera({ ...newCamera, useManualCapacity: !newCamera.useManualCapacity })}
+                                                                className={`relative w-10 h-5 rounded-full transition-colors ${newCamera.useManualCapacity ? 'bg-amber-500' : 'bg-emerald-500'}`}
                                                             >
-                                                                {zones.map(zone => (
-                                                                    <option key={zone} value={zone}>{zone}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                        <div className="col-span-2">
-                                                            <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 flex items-center gap-1">
-                                                                <Network className="w-3 h-3" />
-                                                                IP Address / Stream URL
-                                                            </label>
-                                                            <input
-                                                                type="text"
-                                                                value={editForm.url}
-                                                                onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
-                                                                placeholder="http://192.168.1.100:4747/video"
-                                                                className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500 font-mono"
-                                                            />
+                                                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${newCamera.useManualCapacity ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                                                            </button>
+                                                            <span className={`text-xs ${newCamera.useManualCapacity ? 'text-amber-500 font-medium' : 'text-zinc-400'}`}>Manual</span>
                                                         </div>
                                                     </div>
-                                                    
-                                                    {/* Area Configuration */}
-                                                    <div className="pt-3 border-t border-zinc-300 dark:border-zinc-600">
-                                                        <div className="flex items-center gap-2 mb-3">
-                                                            <Ruler className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                                            <span className="text-sm font-medium text-zinc-900 dark:text-white">Area Configuration</span>
+
+                                                    {newCamera.useManualCapacity ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                value={newCamera.manualCapacity}
+                                                                onChange={(e) => setNewCamera({ ...newCamera, manualCapacity: parseInt(e.target.value) || 0 })}
+                                                                className="flex-1 bg-zinc-50 dark:bg-zinc-700 border border-amber-500/50 rounded-lg px-3 py-2 text-lg font-bold text-amber-500 focus:outline-none focus:border-amber-500"
+                                                            />
+                                                            <span className="text-xs text-zinc-500">people</span>
+                                                            {newCamera.manualCapacity === 0 && (
+                                                                <span className="text-xs text-red-500 font-medium">🚫 NO ENTRY ZONE</span>
+                                                            )}
                                                         </div>
-                                                        <div className="grid grid-cols-3 gap-3">
+                                                    ) : (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-xs text-zinc-400">Based on area & density:</span>
+                                                            <span className="text-lg font-bold text-emerald-500">
+                                                                {calculateCapacity(newCamera.area, newCamera.areaUnit, newCamera.densityLevel)} people
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="col-span-2 flex items-end">
+                                                <button
+                                                    onClick={addCamera}
+                                                    disabled={cameraLoading}
+                                                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
+                                                >
+                                                    {cameraLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                                    Add Camera
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Camera List */}
+                                <div className="space-y-3">
+                                    {cameras.length === 0 ? (
+                                        <div className="text-center py-8 text-zinc-500">
+                                            <Video className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                            <p>No cameras configured</p>
+                                            <p className="text-sm">Click &quot;Add Camera&quot; to get started</p>
+                                        </div>
+                                    ) : (
+                                        cameras.map((camera) => (
+                                            <div
+                                                key={camera.id}
+                                                className={`p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border transition-colors ${camera.enabled ? 'border-zinc-200 dark:border-zinc-600' : 'border-zinc-300 dark:border-zinc-700 opacity-60'
+                                                    }`}
+                                            >
+                                                {editingCameraId === camera.id ? (
+                                                    /* Edit Form */
+                                                    <div className="space-y-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <h4 className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                                                                <Pencil className="w-4 h-4" />
+                                                                Edit Camera
+                                                            </h4>
+                                                            <button onClick={cancelEditing} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-3">
                                                             <div>
-                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Physical Area</label>
+                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Camera Name</label>
                                                                 <input
-                                                                    type="number"
-                                                                    min="1"
-                                                                    value={editForm.area}
-                                                                    onChange={(e) => setEditForm({ ...editForm, area: parseFloat(e.target.value) || 0 })}
+                                                                    type="text"
+                                                                    value={editForm.name}
+                                                                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                                                                     className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
                                                                 />
                                                             </div>
                                                             <div>
-                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Unit</label>
-                                                                <select
-                                                                    value={editForm.areaUnit}
-                                                                    onChange={(e) => setEditForm({ ...editForm, areaUnit: e.target.value as AreaUnit })}
-                                                                    className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                                                >
-                                                                    <option value="sqm">m²</option>
-                                                                    <option value="sqft">ft²</option>
-                                                                </select>
+                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Zone</label>
+                                                                {showEditZoneInput ? (
+                                                                    <div className="flex gap-2">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={newCustomZoneName}
+                                                                            onChange={(e) => setNewCustomZoneName(e.target.value)}
+                                                                            placeholder="Enter zone name"
+                                                                            autoFocus
+                                                                            className="flex-1 bg-white dark:bg-zinc-800 border border-emerald-500 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none"
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter') {
+                                                                                    const z = newCustomZoneName.trim();
+                                                                                    if (z) {
+                                                                                        setCustomZones(prev => Array.from(new Set([...prev, z])));
+                                                                                        setEditForm({ ...editForm, zone: z });
+                                                                                        setShowEditZoneInput(false);
+                                                                                        setNewCustomZoneName('');
+                                                                                    }
+                                                                                } else if (e.key === 'Escape') {
+                                                                                    setShowEditZoneInput(false);
+                                                                                    setNewCustomZoneName('');
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                setShowEditZoneInput(false);
+                                                                                setNewCustomZoneName('');
+                                                                            }}
+                                                                            className="p-2 text-zinc-400 hover:text-zinc-600"
+                                                                        >
+                                                                            <X className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex gap-2">
+                                                                        <select
+                                                                            value={editForm.zone}
+                                                                            onChange={(e) => setEditForm({ ...editForm, zone: e.target.value })}
+                                                                            className="flex-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                                        >
+                                                                            {allZones.map(zone => (
+                                                                                <option key={zone} value={zone}>{zone}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <button
+                                                                            onClick={(e) => { e.preventDefault(); setShowEditZoneInput(true); }}
+                                                                            className="p-2 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg text-emerald-600 dark:text-emerald-400 transition-colors"
+                                                                            title="New Zone"
+                                                                        >
+                                                                            <Plus className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                            <div>
-                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Density</label>
-                                                                <select
-                                                                    value={editForm.densityLevel}
-                                                                    onChange={(e) => setEditForm({ ...editForm, densityLevel: e.target.value as DensityLevel })}
-                                                                    className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                                                >
-                                                                    <option value="low">Low</option>
-                                                                    <option value="medium">Medium</option>
-                                                                    <option value="high">High</option>
-                                                                </select>
+                                                            <div className="col-span-2">
+                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 flex items-center gap-1">
+                                                                    <Network className="w-3 h-3" />
+                                                                    IP Address / Stream URL
+                                                                </label>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editForm.url}
+                                                                    onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
+                                                                    placeholder="http://192.168.1.100:4747/video"
+                                                                    className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500 font-mono"
+                                                                />
                                                             </div>
                                                         </div>
-                                                        
-                                                        {/* Capacity Preview */}
-                                                        <div className="mt-3 p-2 bg-white dark:bg-zinc-800 rounded-lg border border-emerald-500/30 flex items-center justify-between">
-                                                            <span className="text-xs text-zinc-500 dark:text-zinc-400">Calculated Capacity:</span>
-                                                            <span className="text-sm font-bold text-emerald-500">
-                                                                {calculateCapacity(editForm.area, editForm.areaUnit, editForm.densityLevel)} people
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Save/Cancel Buttons */}
-                                                    <div className="flex gap-2 pt-2">
-                                                        <button
-                                                            onClick={saveEditedCamera}
-                                                            disabled={cameraLoading}
-                                                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
-                                                        >
-                                                            {cameraLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                                            Save Changes
-                                                        </button>
-                                                        <button
-                                                            onClick={cancelEditing}
-                                                            className="px-4 py-2 bg-zinc-200 dark:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-500 transition-colors"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                /* Normal Camera Display */
-                                                <>
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`w-3 h-3 rounded-full ${camera.status === 'online' ? 'bg-emerald-500' : camera.status === 'offline' ? 'bg-red-500' : 'bg-zinc-400'
-                                                            }`}></div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-medium text-zinc-900 dark:text-white">{camera.name}</span>
-                                                                <span className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{camera.zone}</span>
-                                                                <span className={`text-xs px-2 py-0.5 rounded ${camera.status === 'online' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'
-                                                                    }`}>
-                                                                    {camera.status || 'offline'}
-                                                                </span>
+
+                                                        {/* Area Configuration */}
+                                                        <div className="pt-3 border-t border-zinc-300 dark:border-zinc-600">
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <Ruler className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Area Configuration</span>
                                                             </div>
-                                                            <div className="text-xs text-zinc-500 truncate mt-1 flex items-center gap-1 font-mono">
-                                                                <Network className="w-3 h-3" />
-                                                                {camera.url || 'No URL configured'}
+                                                            <div className="grid grid-cols-3 gap-3">
+                                                                <div>
+                                                                    <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Physical Area</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        value={editForm.area}
+                                                                        onChange={(e) => setEditForm({ ...editForm, area: parseFloat(e.target.value) || 0 })}
+                                                                        className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Unit</label>
+                                                                    <select
+                                                                        value={editForm.areaUnit}
+                                                                        onChange={(e) => setEditForm({ ...editForm, areaUnit: e.target.value as AreaUnit })}
+                                                                        className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                                    >
+                                                                        <option value="sqm">m²</option>
+                                                                        <option value="sqft">ft²</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-xs text-zinc-500 dark:text-zinc-400 mb-1 block">Density</label>
+                                                                    <select
+                                                                        value={editForm.densityLevel}
+                                                                        onChange={(e) => setEditForm({ ...editForm, densityLevel: e.target.value as DensityLevel })}
+                                                                        className="w-full bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                                                    >
+                                                                        <option value="low">Low</option>
+                                                                        <option value="medium">Medium</option>
+                                                                        <option value="high">High</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Capacity Section with Auto/Manual Toggle */}
+                                                            <div className="mt-3 p-2 bg-white dark:bg-zinc-800 rounded-lg border border-emerald-500/30">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Max Capacity:</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-[10px] ${!editForm.useManualCapacity ? 'text-emerald-500 font-medium' : 'text-zinc-400'}`}>Auto</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setEditForm({ ...editForm, useManualCapacity: !editForm.useManualCapacity })}
+                                                                            className={`relative w-8 h-4 rounded-full transition-colors ${editForm.useManualCapacity ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                                                        >
+                                                                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${editForm.useManualCapacity ? 'translate-x-4' : 'translate-x-0.5'}`}></div>
+                                                                        </button>
+                                                                        <span className={`text-[10px] ${editForm.useManualCapacity ? 'text-amber-500 font-medium' : 'text-zinc-400'}`}>Manual</span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {editForm.useManualCapacity ? (
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            value={editForm.manualCapacity}
+                                                                            onChange={(e) => setEditForm({ ...editForm, manualCapacity: parseInt(e.target.value) || 0 })}
+                                                                            className="flex-1 bg-zinc-50 dark:bg-zinc-700 border border-amber-500/50 rounded px-2 py-1 text-sm font-bold text-amber-500 focus:outline-none"
+                                                                        />
+                                                                        <span className="text-[10px] text-zinc-500">people</span>
+                                                                        {editForm.manualCapacity === 0 && (
+                                                                            <span className="text-[10px] text-red-500 font-medium">🚫</span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-[10px] text-zinc-400">Auto:</span>
+                                                                        <span className="text-sm font-bold text-emerald-500">
+                                                                            {calculateCapacity(editForm.area, editForm.areaUnit, editForm.densityLevel)} people
+                                                                        </span>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2">
+
+                                                        {/* Save/Cancel Buttons */}
+                                                        <div className="flex gap-2 pt-2">
                                                             <button
-                                                                onClick={() => startEditingCamera(camera)}
-                                                                className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                                                                title="Edit camera"
+                                                                onClick={saveEditedCamera}
+                                                                disabled={cameraLoading}
+                                                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
                                                             >
-                                                                <Pencil className="w-4 h-4" />
+                                                                {cameraLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                                                Save Changes
                                                             </button>
                                                             <button
-                                                                onClick={() => toggleCameraEnabled(camera)}
-                                                                className={`relative w-10 h-5 rounded-full transition-colors ${camera.enabled ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'
-                                                                    }`}
-                                                                title={camera.enabled ? 'Disable camera' : 'Enable camera'}
+                                                                onClick={cancelEditing}
+                                                                className="px-4 py-2 bg-zinc-200 dark:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-500 transition-colors"
                                                             >
-                                                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${camera.enabled ? 'translate-x-5' : 'translate-x-0.5'
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    /* Normal Camera Display */
+                                                    <>
+                                                        <div className="flex items-center gap-4">
+                                                            <div className={`w-3 h-3 rounded-full ${camera.status === 'online' ? 'bg-emerald-500' : camera.status === 'offline' ? 'bg-red-500' : 'bg-zinc-400'
                                                                 }`}></div>
-                                                            </button>
-                                                            <button
-                                                                onClick={() => deleteCamera(camera.id)}
-                                                                className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                                title="Delete camera"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-medium text-zinc-900 dark:text-white">{camera.name}</span>
+                                                                    <span className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{camera.zone}</span>
+                                                                    <span className={`text-xs px-2 py-0.5 rounded ${camera.status === 'online' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                                                                        }`}>
+                                                                        {camera.status || 'offline'}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-xs text-zinc-500 truncate mt-1 flex items-center gap-1 font-mono">
+                                                                    <Network className="w-3 h-3" />
+                                                                    {camera.url || 'No URL configured'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={() => startEditingCamera(camera)}
+                                                                    className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                                                                    title="Edit camera"
+                                                                >
+                                                                    <Pencil className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => toggleCameraEnabled(camera)}
+                                                                    className={`relative w-10 h-5 rounded-full transition-colors ${camera.enabled ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'
+                                                                        }`}
+                                                                    title={camera.enabled ? 'Disable camera' : 'Enable camera'}
+                                                                >
+                                                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${camera.enabled ? 'translate-x-5' : 'translate-x-0.5'
+                                                                        }`}></div>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => deleteCamera(camera.id)}
+                                                                    className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                                    title="Delete camera"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    
-                                                    {/* Area & Capacity Info */}
-                                                    <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-600 grid grid-cols-3 gap-4 text-xs">
-                                                        <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                                                            <Ruler className="w-3.5 h-3.5" />
-                                                            <span>Area: {camera.area || 'N/A'} {camera.area ? (camera.areaUnit === 'sqft' ? 'ft²' : 'm²') : ''}</span>
+
+                                                        {/* Area & Capacity Info */}
+                                                        <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-600 grid grid-cols-3 gap-4 text-xs">
+                                                            <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+                                                                <Ruler className="w-3.5 h-3.5" />
+                                                                <span>Area: {camera.area || 'N/A'} {camera.area ? (camera.areaUnit === 'sqft' ? 'ft²' : 'm²') : ''}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 text-emerald-500">
+                                                                <Calculator className="w-3.5 h-3.5" />
+                                                                <span>Capacity: {camera.capacity !== undefined ? camera.capacity : 'N/A'} {camera.capacity !== undefined ? 'people' : ''}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400/70">
+                                                                <span>Density: {camera.densityLevel || 'N/A'}</span>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex items-center gap-1.5 text-emerald-500">
-                                                            <Calculator className="w-3.5 h-3.5" />
-                                                            <span>Capacity: {camera.capacity || 'N/A'} {camera.capacity ? 'people' : ''}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400/70">
-                                                            <span>Density: {camera.densityLevel || 'N/A'}</span>
-                                                        </div>
-                                                    </div>
-                                                </>
+                                                    </>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Network & Performance */}
+                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1 flex items-center gap-2">
+                                    <Gauge className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                                    Network & Performance
+                                </h3>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Optimize for your network conditions</p>
+
+                                {/* Low Bandwidth Mode */}
+                                <div className="flex items-start justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600 mb-4">
+                                    <div className="flex items-start gap-4">
+                                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${settings.lowBandwidthMode ? 'bg-amber-500/20 border border-amber-500/30' : 'bg-emerald-500/10 border border-emerald-500/20'
+                                            }`}>
+                                            {settings.lowBandwidthMode ? (
+                                                <WifiOff className="w-6 h-6 text-amber-500" />
+                                            ) : (
+                                                <Wifi className="w-6 h-6 text-emerald-500" />
                                             )}
                                         </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Network & Performance */}
-                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                            <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1 flex items-center gap-2">
-                                <Gauge className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                                Network & Performance
-                            </h3>
-                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Optimize for your network conditions</p>
-
-                            {/* Low Bandwidth Mode */}
-                            <div className="flex items-start justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600 mb-4">
-                                <div className="flex items-start gap-4">
-                                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${settings.lowBandwidthMode ? 'bg-amber-500/20 border border-amber-500/30' : 'bg-emerald-500/10 border border-emerald-500/20'
-                                        }`}>
-                                        {settings.lowBandwidthMode ? (
-                                            <WifiOff className="w-6 h-6 text-amber-500" />
-                                        ) : (
-                                            <Wifi className="w-6 h-6 text-emerald-500" />
-                                        )}
+                                        <div>
+                                            <h4 className="font-medium text-zinc-900 dark:text-white">Low Bandwidth Mode</h4>
+                                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-md">
+                                                Disable video streams and show only coordinate data on a map. Reduces bandwidth by ~100x.
+                                                Ideal for areas with poor 5G/LTE connectivity.
+                                            </p>
+                                            {settings.lowBandwidthMode && (
+                                                <div className="flex items-center gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
+                                                    <Info className="w-3 h-3" />
+                                                    Video feeds will be replaced with dot visualization
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={() => updateSetting('lowBandwidthMode', !settings.lowBandwidthMode)}
+                                        className={`relative w-14 h-7 rounded-full transition-colors ${settings.lowBandwidthMode ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                                            }`}
+                                    >
+                                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.lowBandwidthMode ? 'translate-x-8' : 'translate-x-1'
+                                            }`}></div>
+                                    </button>
+                                </div>
+
+                                {/* Auto Refresh Interval */}
+                                <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600">
                                     <div>
-                                        <h4 className="font-medium text-zinc-900 dark:text-white">Low Bandwidth Mode</h4>
-                                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-md">
-                                            Disable video streams and show only coordinate data on a map. Reduces bandwidth by ~100x.
-                                            Ideal for areas with poor 5G/LTE connectivity.
-                                        </p>
-                                        {settings.lowBandwidthMode && (
-                                            <div className="flex items-center gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                                <Info className="w-3 h-3" />
-                                                Video feeds will be replaced with dot visualization
-                                            </div>
-                                        )}
+                                        <h4 className="font-medium text-zinc-900 dark:text-white">Data Refresh Interval</h4>
+                                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">How often to fetch analytics data</p>
                                     </div>
+                                    <select
+                                        value={settings.autoRefreshInterval}
+                                        onChange={(e) => updateSetting('autoRefreshInterval', parseInt(e.target.value))}
+                                        className="bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+                                    >
+                                        <option value={1000}>1 second</option>
+                                        <option value={2000}>2 seconds</option>
+                                        <option value={5000}>5 seconds</option>
+                                        <option value={10000}>10 seconds</option>
+                                        <option value={30000}>30 seconds</option>
+                                    </select>
                                 </div>
-                                <button
-                                    onClick={() => updateSetting('lowBandwidthMode', !settings.lowBandwidthMode)}
-                                    className={`relative w-14 h-7 rounded-full transition-colors ${settings.lowBandwidthMode ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                                        }`}
-                                >
-                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.lowBandwidthMode ? 'translate-x-8' : 'translate-x-1'
-                                        }`}></div>
-                                </button>
                             </div>
 
-                            {/* Auto Refresh Interval */}
-                            <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600">
-                                <div>
-                                    <h4 className="font-medium text-zinc-900 dark:text-white">Data Refresh Interval</h4>
-                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">How often to fetch analytics data</p>
-                                </div>
-                                <select
-                                    value={settings.autoRefreshInterval}
-                                    onChange={(e) => updateSetting('autoRefreshInterval', parseInt(e.target.value))}
-                                    className="bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-4 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
-                                >
-                                    <option value={1000}>1 second</option>
-                                    <option value={2000}>2 seconds</option>
-                                    <option value={5000}>5 seconds</option>
-                                    <option value={10000}>10 seconds</option>
-                                    <option value={30000}>30 seconds</option>
-                                </select>
-                            </div>
-                        </div>
+                            {/* Privacy & Security */}
+                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1 flex items-center gap-2">
+                                    <Eye className="w-5 h-5 text-purple-500" />
+                                    Privacy & Security
+                                </h3>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">GDPR compliance and privacy controls</p>
 
-                        {/* Privacy & Security */}
-                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                            <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1 flex items-center gap-2">
-                                <Eye className="w-5 h-5 text-purple-500" />
-                                Privacy & Security
-                            </h3>
-                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">GDPR compliance and privacy controls</p>
-
-                            {/* Privacy Masking */}
-                            <div className="flex items-start justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600 mb-4">
-                                <div className="flex items-start gap-4">
-                                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${settings.privacyMaskingEnabled ? 'bg-purple-500/20 border border-purple-500/30' : 'bg-emerald-500/10 border border-emerald-500/20'
-                                        }`}>
-                                        {settings.privacyMaskingEnabled ? (
-                                            <EyeOff className="w-6 h-6 text-purple-500" />
-                                        ) : (
-                                            <Eye className="w-6 h-6 text-emerald-500" />
-                                        )}
+                                {/* Privacy Masking */}
+                                <div className="flex items-start justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600 mb-4">
+                                    <div className="flex items-start gap-4">
+                                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${settings.privacyMaskingEnabled ? 'bg-purple-500/20 border border-purple-500/30' : 'bg-emerald-500/10 border border-emerald-500/20'
+                                            }`}>
+                                            {settings.privacyMaskingEnabled ? (
+                                                <EyeOff className="w-6 h-6 text-purple-500" />
+                                            ) : (
+                                                <Eye className="w-6 h-6 text-emerald-500" />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-medium text-zinc-900 dark:text-white">Privacy Masking (Face Blur)</h4>
+                                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-md">
+                                                Use AI to automatically blur faces in real-time video feeds.
+                                                Ensures GDPR/Privacy compliance for public monitoring.
+                                            </p>
+                                            {settings.privacyMaskingEnabled && (
+                                                <div className="flex items-center gap-2 mt-2 text-xs text-purple-600 dark:text-purple-400">
+                                                    <Info className="w-3 h-3" />
+                                                    Face detection is active on all video streams
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={() => updateSetting('privacyMaskingEnabled', !settings.privacyMaskingEnabled)}
+                                        className={`relative w-14 h-7 rounded-full transition-colors ${settings.privacyMaskingEnabled ? 'bg-purple-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                                            }`}
+                                    >
+                                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.privacyMaskingEnabled ? 'translate-x-8' : 'translate-x-1'
+                                            }`}></div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Display Settings */}
+                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1 flex items-center gap-2">
+                                    <Monitor className="w-5 h-5 text-emerald-500" />
+                                    Display Settings
+                                </h3>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Customize your dashboard appearance</p>
+
+                                {/* Density Overlay */}
+                                <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600 mb-4">
                                     <div>
-                                        <h4 className="font-medium text-zinc-900 dark:text-white">Privacy Masking (Face Blur)</h4>
-                                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-md">
-                                            Use AI to automatically blur faces in real-time video feeds.
-                                            Ensures GDPR/Privacy compliance for public monitoring.
-                                        </p>
-                                        {settings.privacyMaskingEnabled && (
-                                            <div className="flex items-center gap-2 mt-2 text-xs text-purple-600 dark:text-purple-400">
-                                                <Info className="w-3 h-3" />
-                                                Face detection is active on all video streams
-                                            </div>
-                                        )}
+                                        <h4 className="font-medium text-zinc-900 dark:text-white">Show Density Overlay</h4>
+                                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Display crowd density indicators on video feeds</p>
                                     </div>
+                                    <button
+                                        onClick={() => updateSetting('showDensityOverlay', !settings.showDensityOverlay)}
+                                        className={`relative w-14 h-7 rounded-full transition-colors ${settings.showDensityOverlay ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                                            }`}
+                                    >
+                                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.showDensityOverlay ? 'translate-x-8' : 'translate-x-1'
+                                            }`}></div>
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => updateSetting('privacyMaskingEnabled', !settings.privacyMaskingEnabled)}
-                                    className={`relative w-14 h-7 rounded-full transition-colors ${settings.privacyMaskingEnabled ? 'bg-purple-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                                        }`}
-                                >
-                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.privacyMaskingEnabled ? 'translate-x-8' : 'translate-x-1'
-                                        }`}></div>
-                                </button>
+
+                                {/* Alert Sounds */}
+                                <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600">
+                                    <div>
+                                        <h4 className="font-medium text-zinc-900 dark:text-white">Alert Sounds</h4>
+                                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Play audio notifications for critical alerts</p>
+                                    </div>
+                                    <button
+                                        onClick={() => updateSetting('alertSoundEnabled', !settings.alertSoundEnabled)}
+                                        className={`relative w-14 h-7 rounded-full transition-colors ${settings.alertSoundEnabled ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                                            }`}
+                                    >
+                                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.alertSoundEnabled ? 'translate-x-8' : 'translate-x-1'
+                                            }`}></div>
+                                    </button>
+                                </div>
                             </div>
+
+                            {/* Bandwidth Comparison */}
+                            {settings.lowBandwidthMode && (
+                                <div className="bg-linear-to-r from-amber-500/10 to-transparent rounded-xl p-6 border border-amber-500/30">
+                                    <h3 className="text-lg font-bold text-amber-600 dark:text-amber-400 mb-4">Low Bandwidth Mode Active</h3>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="bg-white/50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                            <div className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Normal Mode</div>
+                                            <div className="text-2xl font-bold text-red-500">~2-5 MB/s</div>
+                                            <div className="text-xs text-zinc-500">MJPEG video streams</div>
+                                        </div>
+                                        <div className="bg-white/50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                            <div className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Low Bandwidth</div>
+                                            <div className="text-2xl font-bold text-emerald-500">~10-50 KB/s</div>
+                                            <div className="text-xs text-zinc-500">Coordinate data only</div>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-4">
+                                        Video feeds will be replaced with a real-time dot map showing person positions.
+                                        All analytics and alerts remain fully functional.
+                                    </p>
+                                </div>
+                            )}
                         </div>
-
-                        {/* Display Settings */}
-                        <div className="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                            <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1 flex items-center gap-2">
-                                <Monitor className="w-5 h-5 text-emerald-500" />
-                                Display Settings
-                            </h3>
-                            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Customize your dashboard appearance</p>
-
-                            {/* Density Overlay */}
-                            <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600 mb-4">
-                                <div>
-                                    <h4 className="font-medium text-zinc-900 dark:text-white">Show Density Overlay</h4>
-                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Display crowd density indicators on video feeds</p>
-                                </div>
-                                <button
-                                    onClick={() => updateSetting('showDensityOverlay', !settings.showDensityOverlay)}
-                                    className={`relative w-14 h-7 rounded-full transition-colors ${settings.showDensityOverlay ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                                        }`}
-                                >
-                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.showDensityOverlay ? 'translate-x-8' : 'translate-x-1'
-                                        }`}></div>
-                                </button>
-                            </div>
-
-                            {/* Alert Sounds */}
-                            <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg border border-zinc-200 dark:border-zinc-600">
-                                <div>
-                                    <h4 className="font-medium text-zinc-900 dark:text-white">Alert Sounds</h4>
-                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Play audio notifications for critical alerts</p>
-                                </div>
-                                <button
-                                    onClick={() => updateSetting('alertSoundEnabled', !settings.alertSoundEnabled)}
-                                    className={`relative w-14 h-7 rounded-full transition-colors ${settings.alertSoundEnabled ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                                        }`}
-                                >
-                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${settings.alertSoundEnabled ? 'translate-x-8' : 'translate-x-1'
-                                        }`}></div>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Bandwidth Comparison */}
-                        {settings.lowBandwidthMode && (
-                            <div className="bg-linear-to-r from-amber-500/10 to-transparent rounded-xl p-6 border border-amber-500/30">
-                                <h3 className="text-lg font-bold text-amber-600 dark:text-amber-400 mb-4">Low Bandwidth Mode Active</h3>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="bg-white/50 dark:bg-zinc-800/50 rounded-lg p-4">
-                                        <div className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Normal Mode</div>
-                                        <div className="text-2xl font-bold text-red-500">~2-5 MB/s</div>
-                                        <div className="text-xs text-zinc-500">MJPEG video streams</div>
-                                    </div>
-                                    <div className="bg-white/50 dark:bg-zinc-800/50 rounded-lg p-4">
-                                        <div className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Low Bandwidth</div>
-                                        <div className="text-2xl font-bold text-emerald-500">~10-50 KB/s</div>
-                                        <div className="text-xs text-zinc-500">Coordinate data only</div>
-                                    </div>
-                                </div>
-                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-4">
-                                    Video feeds will be replaced with a real-time dot map showing person positions.
-                                    All analytics and alerts remain fully functional.
-                                </p>
-                            </div>
-                        )}
                     </div>
-                </div>
-            </main>
+                </main>
 
-            {/* Footer */}
-            <footer className="h-12 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-500 tracking-wider">SETTINGS</span>
-                </div>
-                <div className="text-xs text-zinc-500">
-                    {hasChanges ? 'Unsaved changes' : 'All changes saved'}
-                </div>
-            </footer>
+                {/* Footer */}
+                <footer className="h-12 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-6 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-500 tracking-wider">SETTINGS</span>
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                        {hasChanges ? 'Unsaved changes' : 'All changes saved'}
+                    </div>
+                </footer>
             </div>
         </div>
     );
