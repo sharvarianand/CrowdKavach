@@ -44,3 +44,9 @@ next-env.d.ts
 *.pt
 
 *.venv*
+
+# Python server sensitive files (may contain API keys)
+python-server/alert_config.json
+python-server/alert_history.json
+python-server/settings.json
+python-server/cameras.json
