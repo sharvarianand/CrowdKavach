@@ -145,8 +145,8 @@ export default function FloatingEmergencyButton({
                                     <p className="text-zinc-700 dark:text-zinc-300 mb-4">
                                         Emergency alert has been triggered successfully.
                                     </p>
-                                    <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg p-3 text-sm text-amber-800 dark:text-amber-200">
-                                        <strong>Prototype Mode:</strong> In production, this would notify all emergency contacts via WhatsApp and other channels.
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 rounded-lg p-3 text-sm text-emerald-800 dark:text-emerald-200">
+                                        <strong>✅ WhatsApp Alert Sent!</strong> Security personnel have been notified via WhatsApp. Alert also logged to dashboard.
                                     </div>
                                 </div>
                             ) : isConfirming ? (

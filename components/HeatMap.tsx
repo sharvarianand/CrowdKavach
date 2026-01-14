@@ -38,26 +38,33 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
     useEffect(() => {
         const updateDensities = async () => {
             try {
-                const response = await fetch(`${process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || 'http://localhost:8000'}/analytics`);
+                // Fetch real zone data from /analytics/all
+                const response = await fetch(`${process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || 'http://localhost:8000'}/analytics/all`);
                 if (response.ok) {
                     const data = await response.json();
-                    const baseDensity = data.density || 50;
-                    
-                    // Distribute density across zones with some variation
+
+                    // Map camera zones to visualization zones
                     setZones(prev => prev.map(zone => {
-                        const variation = Math.random() * 40 - 20;
-                        const density = Math.min(100, Math.max(0, baseDensity + variation));
-                        const peopleCount = Math.floor((density / 100) * zone.capacity);
-                        return { ...zone, density, peopleCount };
+                        // Find a camera that belongs to this zone or has this zone name
+                        const matchedCam = data.cameras.find((c: any) =>
+                            c.zone.toLowerCase() === zone.name.toLowerCase() ||
+                            c.camera_id === zone.id
+                        );
+
+                        if (matchedCam) {
+                            return {
+                                ...zone,
+                                density: matchedCam.density,
+                                peopleCount: matchedCam.people_count
+                            };
+                        }
+
+                        // Fallback if no specific camera for this zone
+                        return zone;
                     }));
                 }
-            } catch {
-                // Use mock data
-                setZones(prev => prev.map(zone => {
-                    const density = Math.min(100, Math.max(0, Math.random() * 100));
-                    const peopleCount = Math.floor((density / 100) * zone.capacity);
-                    return { ...zone, density, peopleCount };
-                }));
+            } catch (err) {
+                console.error('HeatMap: Failed to fetch zone densities:', err);
             }
         };
 
@@ -258,9 +265,8 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
                             <div className="mt-2">
                                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                                     <div
-                                        className={`h-full transition-all duration-500 ${
-                                            avgDensity > 70 ? 'bg-red-500' : avgDensity > 40 ? 'bg-yellow-500' : 'bg-green-500'
-                                        }`}
+                                        className={`h-full transition-all duration-500 ${avgDensity > 70 ? 'bg-red-500' : avgDensity > 40 ? 'bg-yellow-500' : 'bg-green-500'
+                                            }`}
                                         style={{ width: `${avgDensity}%` }}
                                     />
                                 </div>
@@ -276,10 +282,9 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
                         {selectedZone ? (
                             <div className="space-y-4">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-3 h-3 rounded-full ${
-                                        selectedZone.density > 70 ? 'bg-red-500 animate-pulse' : 
-                                        selectedZone.density > 40 ? 'bg-yellow-500' : 'bg-green-500'
-                                    }`} />
+                                    <div className={`w-3 h-3 rounded-full ${selectedZone.density > 70 ? 'bg-red-500 animate-pulse' :
+                                            selectedZone.density > 40 ? 'bg-yellow-500' : 'bg-green-500'
+                                        }`} />
                                     <span className="text-lg font-bold text-black dark:text-white">{selectedZone.name}</span>
                                 </div>
 
@@ -309,9 +314,8 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
                                     </div>
                                     <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full transition-all duration-500 ${
-                                                selectedZone.density > 70 ? 'bg-red-500' : selectedZone.density > 40 ? 'bg-yellow-500' : 'bg-green-500'
-                                            }`}
+                                            className={`h-full transition-all duration-500 ${selectedZone.density > 70 ? 'bg-red-500' : selectedZone.density > 40 ? 'bg-yellow-500' : 'bg-green-500'
+                                                }`}
                                             style={{ width: `${selectedZone.density}%` }}
                                         />
                                     </div>
@@ -342,20 +346,17 @@ const HeatMapVisualization: React.FC<HeatMapProps> = ({ className = '' }) => {
                             {zones.sort((a, b) => b.density - a.density).map(zone => (
                                 <div
                                     key={zone.id}
-                                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
-                                        selectedZone?.id === zone.id ? 'bg-cyan-500/20 border border-cyan-500/30' : 'bg-zinc-100 dark:bg-black/20 hover:bg-zinc-200 dark:hover:bg-black/40 print:bg-white print:text-black print:border-gray-300'
-                                    }`}
+                                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${selectedZone?.id === zone.id ? 'bg-cyan-500/20 border border-cyan-500/30' : 'bg-zinc-100 dark:bg-black/20 hover:bg-zinc-200 dark:hover:bg-black/40 print:bg-white print:text-black print:border-gray-300'
+                                        }`}
                                     onClick={() => setSelectedZone(zone)}
                                 >
                                     <div className="flex items-center gap-2">
-                                        <div className={`w-2 h-2 rounded-full ${
-                                            zone.density > 70 ? 'bg-red-500' : zone.density > 40 ? 'bg-yellow-500' : 'bg-green-500'
-                                        }`} />
+                                        <div className={`w-2 h-2 rounded-full ${zone.density > 70 ? 'bg-red-500' : zone.density > 40 ? 'bg-yellow-500' : 'bg-green-500'
+                                            }`} />
                                         <span className="text-xs text-black dark:text-gray-300">{zone.name}</span>
                                     </div>
-                                    <span className={`text-xs font-mono ${
-                                        zone.density > 70 ? 'text-red-600 dark:text-red-400' : zone.density > 40 ? 'text-yellow-600 dark:text-yellow-400' : 'text-emerald-600 dark:text-green-400'
-                                    }`}>
+                                    <span className={`text-xs font-mono ${zone.density > 70 ? 'text-red-600 dark:text-red-400' : zone.density > 40 ? 'text-yellow-600 dark:text-yellow-400' : 'text-emerald-600 dark:text-green-400'
+                                        }`}>
                                         {Math.round(zone.density)}%
                                     </span>
                                 </div>

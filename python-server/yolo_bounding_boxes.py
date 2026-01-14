@@ -64,6 +64,18 @@ camera_stop_events: Dict[str, threading.Event] = {}
 camera_detections: Dict[str, list] = {}
 camera_last_detection_time: Dict[str, float] = {}
 
+# Analytics state for "Whole App Sync"
+global_analytics = {
+    "total_visitors": 0,
+    "current_count": 0,  # Live sum of all camera detections
+    "peak_hour": "00:00",
+    "peak_count": 0,
+    "hourly_history": [0] * 24,
+    "last_reset_day": time.strftime("%Y-%m-%d"),
+    "active_cameras": 0
+}
+analytics_lock = threading.Lock()
+
 
 def load_cameras_from_file():
     """Load camera configuration from JSON file"""
@@ -126,7 +138,7 @@ def capture_loop(camera_id: str):
 
         print(f"[{camera_id}] Connected!")
         last_yolo_time = 0
-        yolo_interval = 0.5  # Run YOLO every 500ms for each camera to save CPU
+        yolo_interval = 0.4  # Run YOLO every 400ms for each camera
 
         while cap.isOpened():
             if camera_stop_events.get(camera_id, threading.Event()).is_set():
@@ -148,22 +160,79 @@ def capture_loop(camera_id: str):
                 current_time = time.time()
                 if current_time - last_yolo_time > yolo_interval:
                     # Run YOLO in a way that doesn't block the capture too long
-                    results = model(frame, conf=0.45, iou=0.5, classes=[0], verbose=False)
+                    # Accuracy: Use lower confidence for better human detection
+                    results = model(frame, conf=0.25, iou=0.5, classes=[0], verbose=False)
                     
                     detections = []
                     for result in results:
                         for box in result.boxes:
                             if int(box.cls[0]) == 0:
                                 x1, y1, x2, y2 = box.xyxy[0].tolist()
-                                detections.append({
-                                    "x1": int(x1), "y1": int(y1), 
-                                    "x2": int(x2), "y2": int(y2),
-                                    "conf": float(box.conf[0])
-                                })
+                                width = x2 - x1
+                                height = y2 - y1
+                                
+                                # Accept smaller detections for distant people
+                                if width > 15 and height > 30:
+                                    detections.append({
+                                        "x1": int(x1), "y1": int(y1), 
+                                        "x2": int(x2), "y2": int(y2),
+                                        "conf": float(box.conf[0])
+                                    })
+                    
+                    if detections:
+                        print(f"[{camera_id}] Detected {len(detections)} people")
                     
                     camera_detections[camera_id] = detections
                     camera_last_detection_time[camera_id] = current_time
                     last_yolo_time = current_time
+                    
+                    # Real-time Alert Sync
+                    if ALERTS_ENABLED:
+                        cam_data = cameras.get(camera_id)
+                        if cam_data and cam_data.enabled:
+                            # Use manual capacity if configured, otherwise default
+                            capacity = cam_data.capacity if cam_data.capacity is not None else 50
+                            check_capacity_violation(
+                                zone=cam_data.zone,
+                                camera_id=camera_id,
+                                people_count=len(detections),
+                                max_capacity=capacity
+                            )
+                    
+                    # Update Global Analytics
+                    with analytics_lock:
+                        # Reset if new day
+                        today = time.strftime("%Y-%m-%d")
+                        if today != global_analytics["last_reset_day"]:
+                            global_analytics.update({
+                                "total_visitors": 0,
+                                "peak_hour": "00:00",
+                                "peak_count": 0,
+                                "hourly_history": [0] * 24,
+                                "last_reset_day": today
+                            })
+                        
+                        # Calculate total across all active cameras
+                        current_total = sum(len(d) for d in camera_detections.values())
+                        
+                        # Peek count / hour
+                        current_hour_idx = int(time.strftime("%H"))
+                        global_analytics["hourly_history"][current_hour_idx] = max(
+                            global_analytics["hourly_history"][current_hour_idx],
+                            current_total
+                        )
+                        
+                        if current_total > global_analytics["peak_count"]:
+                            global_analytics["peak_count"] = current_total
+                            global_analytics["peak_hour"] = time.strftime("%H:00")
+                        
+                        # Simple total visitors heuristic (accruing)
+                        # In a real system, we'd use tracking IDs, but here we'll just 
+                        # ensure total_visitors reflects at least the current instantaneous total
+                        global_analytics["total_visitors"] = max(global_analytics["total_visitors"], current_total)
+                        global_analytics["current_count"] = current_total  # Real-time sync
+                        global_analytics["active_cameras"] = len([c for c in cameras.values() if c.enabled])
+
             else:
                 # For MJPEG streams, sometimes read() fails but the stream is still alive
                 # We try to grab/retrieve as a fallback
@@ -551,6 +620,24 @@ def analytics(camera_id: Optional[str] = None):
     )
 
 
+@app.get("/analytics/global")
+def get_global_analytics_endpoint():
+    """Return aggregated stats for the entire app dashboard"""
+    with analytics_lock:
+        data = global_analytics.copy()
+        
+    # Add status of alerts
+    if ALERTS_ENABLED:
+        recent_alerts = get_alert_history(10)
+        data["recent_alerts"] = [a.model_dump() for a in recent_alerts]
+        data["alerts_enabled"] = True
+    else:
+        data["recent_alerts"] = []
+        data["alerts_enabled"] = False
+        
+    return JSONResponse(content=data)
+
+
 @app.get("/analytics/all")
 def analytics_all():
     """Return aggregated analytics from all cameras using cache"""
@@ -688,20 +775,19 @@ def coordinates(camera_id: Optional[str] = None):
 
 def generate_stream(camera_id: Optional[str] = None):
     """Generator function for MJPEG streaming"""
-    target_camera = camera_id
+    print(f"[STREAM] Starting stream for camera_id: {camera_id}")
     while True:
         frame = None
+        target_camera = camera_id
+        
+        # If no camera_id provided, try to pick the first one
+        if not target_camera and camera_frames:
+            target_camera = list(camera_frames.keys())[0]
+
         if target_camera and target_camera in camera_frames:
             with camera_locks.get(target_camera, threading.Lock()):
                 if camera_frames.get(target_camera) is not None:
                     frame = camera_frames[target_camera].copy()
-        else:
-            # Default to first available
-            for cid, f in camera_frames.items():
-                if f is not None:
-                    with camera_locks.get(cid, threading.Lock()):
-                        frame = f.copy()
-                    break
 
         if frame is None:
             time.sleep(0.1)
@@ -725,21 +811,18 @@ def stream(camera_id: Optional[str] = None):
 
 def generate_stream_with_boxes(camera_id: Optional[str] = None):
     """Generator function for MJPEG streaming with bounding boxes from cache"""
-    target_camera = camera_id
+    print(f"[STREAM-BOXES] Starting stream for camera_id: {camera_id}")
     while True:
         frame = None
-        current_cid = target_camera
+        current_cid = camera_id
+        
+        if not current_cid and camera_frames:
+            current_cid = list(camera_frames.keys())[0]
+
         if current_cid and current_cid in camera_frames:
             with camera_locks.get(current_cid, threading.Lock()):
                 if camera_frames.get(current_cid) is not None:
                     frame = camera_frames[current_cid].copy()
-        else:
-            for cid, f in camera_frames.items():
-                if f is not None:
-                    with camera_locks.get(cid, threading.Lock()):
-                        frame = f.copy()
-                        current_cid = cid
-                    break
 
         if frame is None:
             time.sleep(0.1)
@@ -857,22 +940,18 @@ def blur_upper_body(frame, bounding_boxes):
 
 def generate_stream_with_privacy(camera_id: Optional[str] = None):
     """Generator function for MJPEG streaming with privacy masking from cache"""
-    target_camera = camera_id
     while True:
         try:
             frame = None
-            current_cid = target_camera
+            current_cid = camera_id
+            
+            if not current_cid and camera_frames:
+                current_cid = list(camera_frames.keys())[0]
+
             if current_cid and current_cid in camera_frames:
                 with camera_locks.get(current_cid, threading.Lock()):
                     if camera_frames.get(current_cid) is not None:
                         frame = camera_frames[current_cid].copy()
-            else:
-                for cid, f in camera_frames.items():
-                    if f is not None:
-                        with camera_locks.get(cid, threading.Lock()):
-                            frame = f.copy()
-                            current_cid = cid
-                        break
 
             if frame is None:
                 time.sleep(0.1)

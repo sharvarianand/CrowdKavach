@@ -1,7 +1,7 @@
 {
   "lowBandwidthMode": false,
-  "privacyMaskingEnabled": false,
-  "autoRefreshInterval": 2000,
+  "privacyMaskingEnabled": true,
+  "autoRefreshInterval": 1000,
   "showDensityOverlay": true,
   "alertSoundEnabled": true,
   "droidCamUrl": "test"

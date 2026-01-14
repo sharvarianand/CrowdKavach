@@ -8,7 +8,7 @@ import {
   Users, Activity, BarChart3, Settings, Bell,
   Camera, AlertTriangle, TrendingUp, Clock, Menu, X,
   Home, FileText, Map, LogOut, CheckCircle, AlertCircle,
-  Sun, Moon
+  Sun, Moon, LucideProps
 } from 'lucide-react';
 import Logo from './Logo';
 import CameraGrid from './CameraGrid';
@@ -33,6 +33,34 @@ interface Alert {
 
 interface DashboardUIProps {
   user?: User;
+}
+
+interface RawAlert {
+  id: string;
+  type: string;
+  zone: string;
+  msg?: string;
+  timestamp: string;
+}
+
+interface GlobalAnalyticsData {
+  total_visitors: number;
+  current_count: number;
+  peak_hour: string;
+  peak_count: number;
+  hourly_history: number[];
+  active_cameras: number;
+  recent_alerts: RawAlert[];
+}
+
+interface CameraConfig {
+  id: string;
+  name: string;
+  url: string;
+  zone: string;
+  enabled: boolean;
+  type?: 'live' | 'offline';
+  capacity?: number;
 }
 
 export default function DashboardUI({ user }: DashboardUIProps) {
@@ -79,24 +107,39 @@ export default function DashboardUI({ user }: DashboardUIProps) {
     { id: 'settings', label: 'Settings', href: '/settings', icon: Settings },
   ];
 
-  // Stats data
+  // Live Stats & Analytics State
+  const [globalData, setGlobalData] = useState<GlobalAnalyticsData>({
+    total_visitors: 0,
+    current_count: 0,
+    peak_hour: 'N/A',
+    peak_count: 0,
+    hourly_history: Array(24).fill(0),
+    active_cameras: 0,
+    recent_alerts: []
+  });
+
+  // Derived stats for the UI
   const stats = [
-    { icon: Users, label: 'Total Visitors', value: '1,245', change: '+5%', color: 'emerald' },
-    { icon: Camera, label: 'Active Cameras', value: '12', change: '+1', color: 'blue' },
-    { icon: Activity, label: 'Peak Hour', value: '18:00', change: '+2%', color: 'amber' },
-    { icon: CheckCircle, label: 'Incidents Resolved', value: '8', change: '+3', color: 'emerald' },
+    { icon: Users, label: 'Live Occupants', value: (globalData.current_count || 0).toLocaleString(), change: 'Now', color: 'emerald' },
+    { icon: Camera, label: 'Active Cameras', value: globalData.active_cameras.toString(), change: 'Online', color: 'blue' },
+    { icon: Activity, label: 'Peak Hour', value: globalData.peak_hour, change: `${globalData.peak_count} peak`, color: 'amber' },
+    { icon: CheckCircle, label: 'Incidents Resolved', value: '0', change: 'Today', color: 'emerald' },
   ];
 
-  // Alerts data
-  const alerts: Alert[] = [
-    { id: '1', msg: 'High crowd density at Main Plaza', time: '10:32', type: 'warning' },
-    { id: '2', msg: 'Camera 5 offline', time: '09:58', type: 'error' },
-    { id: '3', msg: 'Emergency button pressed', time: '09:45', type: 'info' },
-    { id: '4', msg: 'Incident resolved at Gate 2', time: '09:30', type: 'success' },
-  ];
+  // Derived alerts for the UI
+  const alerts: Alert[] = globalData.recent_alerts.map((a: RawAlert) => ({
+    id: a.id,
+    msg: a.type === 'overcrowding' ? `High crowd density at ${a.zone}` :
+      a.type === 'no_entry_violation' ? `Restricted zone breach at ${a.zone}` :
+        a.type === 'emergency' ? `EMERGENCY: ${a.zone}` : a.msg || 'System Notice',
+    time: new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    type: a.type === 'overcrowding' ? 'warning' :
+      a.type === 'no_entry_violation' ? 'error' :
+        a.type === 'emergency' ? 'info' : 'success'
+  }));
 
-  // Chart data
-  const chartData = [40, 60, 80, 55, 70, 90, 65, 50, 75, 60, 80, 55, 70, 90, 65, 50, 75, 60, 80, 55, 70, 90, 65, 50];
+  // Chart data from real hourly history
+  const chartData = globalData.hourly_history;
 
   // Alert style helper
   function getAlertStyle(type: Alert['type']) {
@@ -115,7 +158,7 @@ export default function DashboardUI({ user }: DashboardUIProps) {
   }
 
   // Info icon fallback
-  function InfoIcon(props: any) {
+  function InfoIcon(props: LucideProps) {
     return <BarChart3 {...props} />;
   }
 
@@ -139,8 +182,27 @@ export default function DashboardUI({ user }: DashboardUIProps) {
     fetchSettings();
   }, [baseUrl]);
 
+  // Polling for Global Analytics
+  useEffect(() => {
+    const fetchGlobalAnalytics = async () => {
+      try {
+        const response = await fetch(`${baseUrl}/analytics/global`);
+        if (response.ok) {
+          const data = await response.json();
+          setGlobalData(data);
+        }
+      } catch (err) {
+        console.error('Dashboard: Failed to fetch global analytics:', err);
+      }
+    };
+
+    fetchGlobalAnalytics();
+    const interval = setInterval(fetchGlobalAnalytics, settings.autoRefreshInterval || 3000);
+    return () => clearInterval(interval);
+  }, [baseUrl, settings.autoRefreshInterval]);
+
   // Camera state for setup wizard
-  const [cameras, setCameras] = useState<any[]>([]);
+  const [cameras, setCameras] = useState<CameraConfig[]>([]);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [camerasLoaded, setCamerasLoaded] = useState(false);
 

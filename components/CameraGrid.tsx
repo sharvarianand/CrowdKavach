@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Camera, WifiOff, Maximize2, Users, RefreshCw, VideoOff, AlertTriangle, ShieldCheck, ShieldAlert, Ruler } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, WifiOff, Maximize2, Users, RefreshCw, VideoOff, AlertTriangle, ShieldCheck, ShieldAlert, Ruler, Activity } from 'lucide-react';
 import { Camera as CameraType, AreaUnit, DensityLevel } from '@/lib/types';
 
 interface CameraConfig {
@@ -11,7 +11,7 @@ interface CameraConfig {
   zone: string;
   enabled: boolean;
   type?: 'live' | 'offline';
-  capacity?: number; // Max safe capacity for the area (calculated from area config)
+  capacity?: number;
   area?: number;
   areaUnit?: AreaUnit;
   densityLevel?: DensityLevel;
@@ -23,7 +23,6 @@ interface CameraStats {
   people: any[];
 }
 
-// Risk assessment based on people count and capacity
 interface RiskAssessment {
   level: 'low' | 'medium' | 'high' | 'critical';
   percentage: number;
@@ -34,6 +33,27 @@ interface RiskAssessment {
 }
 
 function assessRisk(count: number, capacity: number): RiskAssessment {
+  if (capacity === 0) {
+    if (count > 0) {
+      return {
+        level: 'critical',
+        percentage: 100,
+        message: 'RESTRICTED ZONE BREACH!',
+        color: 'text-red-500',
+        bgColor: 'bg-red-500',
+        borderColor: 'border-red-500'
+      };
+    }
+    return {
+      level: 'low',
+      percentage: 0,
+      message: 'Restricted (Clear)',
+      color: 'text-emerald-500',
+      bgColor: 'bg-emerald-500',
+      borderColor: 'border-emerald-500'
+    };
+  }
+
   const percentage = Math.round((count / capacity) * 100);
 
   if (percentage >= 90) {
@@ -82,9 +102,7 @@ export default function CameraGrid({ className = '', settings }: { className?: s
 
   const serverUrl = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || 'http://localhost:8000';
 
-  // Handle mount state - this is a valid pattern for hydration safety
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
   }, []);
 
@@ -99,7 +117,6 @@ export default function CameraGrid({ className = '', settings }: { className?: s
         }
       } catch {
         setServerConnected(false);
-        // Default demo cameras with area-based capacity
         setCameras([
           { id: 'cam-1', name: 'Main Entrance', url: '', zone: 'Zone A', enabled: true, type: 'live', area: 100, areaUnit: 'sqm', densityLevel: 'medium', capacity: 150 },
           { id: 'cam-2', name: 'Plaza Center', url: '', zone: 'Zone B', enabled: false, type: 'offline', area: 200, areaUnit: 'sqm', densityLevel: 'medium', capacity: 300 },
@@ -114,18 +131,6 @@ export default function CameraGrid({ className = '', settings }: { className?: s
     return () => clearInterval(interval);
   }, [serverUrl]);
 
-  const getDensityColor = (density: number) => {
-    if (density > 70) return 'text-red-500';
-    if (density > 40) return 'text-amber-500';
-    return 'text-emerald-500';
-  };
-
-  const getDensityBgColor = (density: number) => {
-    if (density > 70) return 'bg-red-500';
-    if (density > 40) return 'bg-amber-500';
-    return 'bg-emerald-500';
-  };
-
   if (!isMounted) {
     return (
       <div className={`bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 shadow-sm p-8 flex items-center justify-center transition-colors duration-200 ${className}`}>
@@ -139,7 +144,6 @@ export default function CameraGrid({ className = '', settings }: { className?: s
 
   return (
     <div className={`bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 shadow-sm overflow-hidden transition-colors duration-200 ${className}`}>
-      {/* Header */}
       <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Camera className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -163,27 +167,21 @@ export default function CameraGrid({ className = '', settings }: { className?: s
         </div>
       </div>
 
-      {/* Camera Grid */}
       <div className="grid grid-cols-2 gap-0.5 bg-zinc-200 dark:bg-zinc-700">
-        {/* Live Camera - Main Feed */}
         {liveCameras.map((camera) => (
           <LiveCameraFeed
             key={camera.id}
             camera={camera}
             serverUrl={serverUrl}
-            getDensityColor={getDensityColor}
-            getDensityBgColor={getDensityBgColor}
             settings={settings}
           />
         ))}
 
-        {/* Offline Cameras */}
         {offlineCameras.map((camera) => (
           <OfflineCameraPlaceholder key={camera.id} camera={camera} />
         ))}
       </div>
 
-      {/* Footer */}
       <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-700/50 border-t border-zinc-100 dark:border-zinc-700 flex items-center justify-between transition-colors duration-200">
         <span className="text-xs text-zinc-500 dark:text-zinc-400">
           {liveCameras.length}/{cameras.length} cameras online
@@ -203,25 +201,23 @@ export default function CameraGrid({ className = '', settings }: { className?: s
   );
 }
 
-// Live Camera Feed Component
 interface LiveCameraFeedProps {
   camera: CameraConfig;
   serverUrl: string;
-  getDensityColor: (density: number) => string;
-  getDensityBgColor: (density: number) => string;
   settings?: any;
 }
 
-function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor, settings }: LiveCameraFeedProps) {
+function LiveCameraFeed({ camera, serverUrl, settings }: LiveCameraFeedProps) {
   const [cameraStats, setCameraStats] = useState<CameraStats>({ count: 0, density: 0, people: [] });
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
+  const [hasFirstFrame, setHasFirstFrame] = useState(false);
   const [alertTriggered, setAlertTriggered] = useState(false);
-  const lastAlertTimeRef = React.useRef<number>(0);
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
-  // Determine stream endpoint based on settings
+  const lastAlertTimeRef = useRef<number>(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const privacyEnabled = settings?.privacyMaskingEnabled;
   const lowBandwidth = settings?.lowBandwidthMode;
 
@@ -229,12 +225,10 @@ function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor,
     ? `${serverUrl}/stream-with-privacy?camera_id=${camera.id}`
     : `${serverUrl}/stream-with-boxes?camera_id=${camera.id}`;
 
-  // Calculate risk based on camera capacity
   const capacity = camera.capacity ?? 50;
   const isNoEntryZone = capacity === 0;
-  const risk = assessRisk(cameraStats.count, capacity === 0 ? 1 : capacity); // Avoid division by zero
+  const risk = assessRisk(cameraStats.count, capacity === 0 ? 0 : capacity);
 
-  // Polling for camera-specific coordinates
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -246,48 +240,36 @@ function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor,
             density: data.density || 0,
             people: data.people || [],
           });
+          // If we have data, we're at least partially "loaded"
         }
       } catch (err) {
         console.error(`Feed ${camera.id}: Failed to fetch coordinates`, err);
       }
     };
 
-    // Only poll if enabled and in low bandwidth mode (or always if we want detection stats in overlay)
-    // For now always poll to keep the stats overlay updated
     fetchStats();
-    const interval = setInterval(fetchStats, 1000);
+    const interval = setInterval(fetchStats, 500);
     return () => clearInterval(interval);
   }, [serverUrl, camera.id]);
 
-  // Initialize audio element for alarm sound
-  React.useEffect(() => {
-    // Create audio element for alarm (using a simple beep sound)
+  useEffect(() => {
     audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onrm/wMDAv7+/v7/AwMDBwb+/wMDAv7+/wMG/v8DCwcHBwsLCwsLBwcHBwcHBwcHAwMDAwMDAwMHBwcHBwcHAwMDAwMHBwcHCwsLCw8PDw8PDw8PDw8LCwsLCwsLCwsLCwsLBwcHBwcHBwcLCwsLCwsLDw8PDxMTExMTExMTExMTExMTDw8PDw8PDw8PDw8LCwsLCwsHBwcHBwcHBwMDAwMDAwMDAwMHBwcHBwcHBwcHBwcHBwcHBwcDAwMDAwMDAwMC/v7+/v7+/v7+/v7+/v7+/v7+/vMDAwMDAwMDAwMDAwMDAwMDAwMDAwMHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwQ==');
-    audioRef.current.volume = 0.5;
   }, []);
 
-  // Auto-detection alert: Check if capacity exceeded and trigger WhatsApp alert
-  React.useEffect(() => {
+  useEffect(() => {
     const checkAndTriggerAlert = async () => {
       const now = Date.now();
-      const alertCooldown = 60000; // 1 minute cooldown for auto-detection (separate from server cooldown)
-
-      // Check if we should trigger an alert
-      const shouldAlert = (
-        (isNoEntryZone && cameraStats.count > 0) || // No-entry zone violation
-        (!isNoEntryZone && cameraStats.count > capacity) // Overcrowding
-      );
+      const alertCooldown = 60000;
+      const shouldAlert = (isNoEntryZone && cameraStats.count > 0) || (!isNoEntryZone && cameraStats.count > capacity);
 
       if (shouldAlert && !alertTriggered && (now - lastAlertTimeRef.current > alertCooldown)) {
         setAlertTriggered(true);
         lastAlertTimeRef.current = now;
 
-        // Play alarm sound for critical alerts
         if (audioRef.current) {
           try {
             audioRef.current.loop = true;
             await audioRef.current.play();
-            // Stop after 3 seconds
             setTimeout(() => {
               if (audioRef.current) {
                 audioRef.current.loop = false;
@@ -296,13 +278,11 @@ function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor,
               }
             }, 3000);
           } catch (e) {
-            console.log('Audio play failed (user interaction required):', e);
+            console.log('Audio play failed:', e);
           }
         }
 
-        // Trigger WhatsApp alert via API
         try {
-          const alertType = isNoEntryZone ? 'no_entry_violation' : 'overcrowding';
           await fetch(`${serverUrl}/api/alert/check-capacity`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -313,16 +293,12 @@ function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor,
               max_capacity: capacity
             })
           });
-          console.log(`[AUTO-ALERT] ${alertType} alert triggered for ${camera.zone}`);
         } catch (err) {
-          console.error('Failed to trigger auto-detection alert:', err);
+          console.error('Failed to trigger alert:', err);
         }
-
-        // Reset alert state after cooldown
         setTimeout(() => setAlertTriggered(false), alertCooldown);
       }
     };
-
     checkAndTriggerAlert();
   }, [cameraStats.count, capacity, isNoEntryZone, alertTriggered, serverUrl, camera.id, camera.zone, camera.name]);
 
@@ -332,206 +308,153 @@ function LiveCameraFeed({ camera, serverUrl, getDensityColor, getDensityBgColor,
     setRetryCount(prev => prev + 1);
   };
 
-  // Auto-retry on error
   useEffect(() => {
     if (hasError) {
-      const timer = setTimeout(() => {
-        handleRetry();
-      }, 5000);
+      const timer = setTimeout(handleRetry, 5000);
       return () => clearTimeout(timer);
     }
   }, [hasError]);
 
+  const hasData = cameraStats.count !== undefined && (cameraStats.count > 0 || cameraStats.people.length > 0);
+  const showLoadingOverlay = isLoading && !hasFirstFrame && !hasData;
+
   return (
-    <div className="relative bg-zinc-900 overflow-hidden aspect-4/3">
-      {lowBandwidth ? (
-        <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center p-4">
-          <div className="relative w-full aspect-4/3 bg-zinc-950/50 rounded-lg border border-zinc-800/50 overflow-hidden">
-            {/* Simple Grid Lines */}
-            <div className="absolute inset-0 grid grid-cols-10 grid-rows-10 opacity-10">
-              {[...Array(100)].map((_, i) => (
-                <div key={i} className="border-[0.5px] border-emerald-500"></div>
+    <div className="relative group bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 hover:border-emerald-500/50 transition-all duration-300 shadow-lg">
+      <div className="aspect-video relative overflow-hidden bg-zinc-950">
+        {lowBandwidth ? (
+          <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+            <div className="relative w-full h-full bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.1)_0%,transparent_100%)]">
+              {cameraStats.people?.map((person: any) => (
+                <div
+                  key={person.id}
+                  className="absolute w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] transition-all duration-300"
+                  style={{ left: `${person.x}%`, top: `${person.y}%`, transform: 'translate(-50%, -50%)' }}
+                />
               ))}
-            </div>
-
-            {/* Coordinate Dots */}
-            {cameraStats.people?.map((person: any) => (
-              <div
-                key={person.id}
-                className="absolute w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] transition-all duration-300"
-                style={{
-                  left: `${person.x}%`,
-                  top: `${person.y}%`,
-                  transform: 'translate(-50%, -50%)'
-                }}
-              />
-            ))}
-
-            <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 rounded text-[9px] text-zinc-400 font-mono">
-              LOW-BW MODE ACTIVE: VISUALIZING {cameraStats.count} DETECTIONS
+              <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 rounded text-[9px] text-zinc-400 font-mono text-uppercase">
+                LOW-BW: {cameraStats.count} DETECTIONS
+              </div>
             </div>
           </div>
-        </div>
-      ) : !hasError ? (
-        <>
-          {/* MJPEG Stream - key forces re-render on retry */}
-          <img
-            key={`feed-${retryCount}-${privacyEnabled}`}
-            src={videoFeedUrl}
-            alt={camera.name}
-            className="w-full h-full object-cover"
-            onLoad={() => {
-              console.log('Video feed loaded');
-              setIsLoading(false);
-            }}
-            onError={(e) => {
-              console.log('Video feed error:', e);
-              setIsLoading(false);
-              setHasError(true);
-            }}
-          />
-
-          {isLoading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-10">
-              <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin mb-2" />
-              <span className="text-xs text-zinc-400">Connecting to camera...</span>
-              <span className="text-[10px] text-zinc-500 mt-1">{serverUrl}</span>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 text-zinc-400">
-          <WifiOff className="w-10 h-10 mb-2" />
-          <span className="text-sm font-medium">Cannot connect to feed</span>
-          <span className="text-xs mt-1 text-zinc-500">Ensure Python server is running</span>
-          <button
-            onClick={handleRetry}
-            className="mt-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium transition-colors"
-          >
-            Retry Now
-          </button>
-          <span className="text-[10px] text-zinc-600 mt-2">Auto-retry in 5s...</span>
-        </div>
-      )}
-
-      {/* Top Overlay */}
-      {!hasError && !isLoading && (
-        <div className="absolute top-0 left-0 right-0 p-2.5 bg-linear-to-b from-black/80 to-transparent z-20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-              <span className="text-[10px] text-red-400 font-bold">REC</span>
-              <span className="text-xs font-semibold text-white">{camera.name}</span>
-            </div>
-            <span className="text-[10px] text-emerald-400 bg-emerald-900/50 px-1.5 py-0.5 rounded">YOLO</span>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom Overlay - Stats with Risk Assessment */}
-      {!hasError && !isLoading && (
-        <div className="absolute bottom-0 left-0 right-0 z-20">
-          {/* Alert Triggered Banner - shows when WhatsApp alert was sent */}
-          {alertTriggered && (
-            <div className="px-2.5 py-1.5 bg-green-600 flex items-center justify-center gap-2 animate-pulse">
-              <span className="text-xs font-bold text-white">📱 WHATSAPP ALERT SENT!</span>
-            </div>
-          )}
-
-          {/* Risk Alert Banner - shows when medium or higher */}
-          {!alertTriggered && (risk.level === 'medium' || risk.level === 'high' || risk.level === 'critical') && (
-            <div className={`px-2.5 py-1.5 ${risk.level === 'critical' ? 'bg-red-600 animate-pulse' : risk.level === 'high' ? 'bg-orange-600' : 'bg-amber-600'} flex items-center justify-center gap-2`}>
-              <AlertTriangle className="w-3.5 h-3.5 text-white" />
-              <span className="text-xs font-bold text-white">{risk.message}</span>
-            </div>
-          )}
-
-          {/* No Entry Zone Banner */}
-          {isNoEntryZone && cameraStats.count > 0 && !alertTriggered && (
-            <div className="px-2.5 py-1.5 bg-red-700 animate-pulse flex items-center justify-center gap-2">
-              <span className="text-xs font-bold text-white">🚫 RESTRICTED ZONE BREACH!</span>
-            </div>
-          )}
-
-          {/* Stats Bar */}
-          <div className="p-2.5 bg-linear-to-t from-black/90 to-black/60">
-            <div className="flex items-center justify-between mb-2">
-              {/* People Count */}
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 bg-black/40 rounded-lg px-2 py-1">
-                  <Users className="w-4 h-4 text-white/80" />
-                  <span className="text-lg font-bold text-white">{cameraStats.count}</span>
-                  <span className="text-xs text-white/60">/ {capacity}</span>
+        ) : !hasError ? (
+          <>
+            <img
+              key={`feed-${retryCount}-${privacyEnabled}`}
+              src={videoFeedUrl}
+              alt={camera.name}
+              className="w-full h-full object-cover"
+              onLoad={() => {
+                setIsLoading(false);
+                setHasFirstFrame(true);
+              }}
+              onError={() => {
+                setIsLoading(false);
+                setHasError(true);
+              }}
+            />
+            {showLoadingOverlay && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-900/90 backdrop-blur-sm">
+                <div className="relative">
+                  <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+                  <Activity className="absolute inset-0 m-auto w-5 h-5 text-emerald-500 animate-pulse" />
                 </div>
+                <p className="mt-4 text-[10px] font-bold text-emerald-500/80 animate-pulse tracking-widest uppercase">Initializing Stream...</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 text-zinc-400 p-4 text-center">
+            <WifiOff className="w-8 h-8 mb-2 opacity-50" />
+            <span className="text-xs font-semibold">Feed Connection Lost</span>
+            <button onClick={handleRetry} className="mt-2 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] uppercase font-bold transition-colors">
+              Retry
+            </button>
+          </div>
+        )}
 
-                {/* Risk Level Badge */}
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg ${risk.level === 'critical' ? 'bg-red-500/30 border border-red-500' :
-                  risk.level === 'high' ? 'bg-orange-500/30 border border-orange-500' :
-                    risk.level === 'medium' ? 'bg-amber-500/30 border border-amber-500' :
-                      'bg-emerald-500/30 border border-emerald-500'
-                  }`}>
-                  {risk.level === 'low' ? (
-                    <ShieldCheck className={`w-3.5 h-3.5 ${risk.color}`} />
-                  ) : (
-                    <ShieldAlert className={`w-3.5 h-3.5 ${risk.color}`} />
-                  )}
-                  <span className={`text-xs font-bold uppercase ${risk.color}`}>{risk.level}</span>
+        {/* Overlays - Always show if we have data or video */}
+        {(!isLoading || hasData) && !hasError && (
+          <>
+            <div className="absolute top-0 left-0 right-0 p-2.5 bg-linear-to-b from-black/80 to-transparent z-10 transition-opacity duration-500">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(239,68,68,0.8)]"></span>
+                  <span className="text-[9px] text-red-400 font-black tracking-tighter">LIVE</span>
+                  <span className="text-[10px] font-bold text-white uppercase tracking-tight">{camera.name}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {isNoEntryZone && <span className="text-[8px] bg-red-500 text-white px-1 py-0.5 rounded font-black tracking-widest">RESTRICTED</span>}
+                  <span className="text-[8px] text-zinc-300 bg-zinc-800/80 px-1.5 py-0.5 rounded font-mono uppercase">{camera.zone}</span>
                 </div>
               </div>
-
-              <Maximize2 className="w-4 h-4 text-white/60 cursor-pointer hover:text-white transition-colors" />
             </div>
 
-            {/* Capacity Progress Bar */}
-            <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all duration-500 ${risk.bgColor}`}
-                style={{ width: `${Math.min(risk.percentage, 100)}%` }}
-              />
+            <div className="absolute bottom-0 left-0 right-0 z-20">
+              {alertTriggered && (
+                <div className="px-2 py-1 bg-emerald-600 flex items-center justify-center gap-2 animate-bounce">
+                  <span className="text-[9px] font-black text-white italic">WhatsApp Alert Dispatched!</span>
+                </div>
+              )}
+
+              {(risk.level !== 'low') && !alertTriggered && (
+                <div className={`px-2 py-1 ${risk.bgColor} flex items-center justify-center gap-2 animate-pulse`}>
+                  <AlertTriangle className="w-3 h-3 text-white" />
+                  <span className="text-[10px] font-black text-white uppercase">{risk.message}</span>
+                </div>
+              )}
+
+              <div className="p-2.5 bg-linear-to-t from-black/95 via-black/80 to-transparent">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-baseline gap-0.5">
+                          <span className="text-xl font-black text-white leading-none">{cameraStats.count}</span>
+                          <span className="text-[10px] text-white/40 font-bold">/ {capacity === 0 ? '🚫' : capacity}</span>
+                        </div>
+                        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${risk.bgColor}/20 border border-${risk.level === 'low' ? 'emerald' : risk.level === 'medium' ? 'amber' : 'red'}-500/30`}>
+                          <span className={`text-[8px] font-black uppercase ${risk.color}`}>
+                            {isNoEntryZone && cameraStats.count > 0 ? 'BREACH' : isNoEntryZone ? 'SECURE' : risk.level}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">{risk.percentage}% LOAD</span>
+                    </div>
+
+                    <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-700 ease-out ${risk.bgColor} shadow-[0_0_10px_${risk.level === 'low' ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'}]`}
+                        style={{ width: `${Math.min(risk.percentage, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <button className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/5 group">
+                    <Maximize2 className="w-3.5 h-3.5 text-white/40 group-hover:text-white transition-colors" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-white/50">Capacity: {risk.percentage}%</span>
-              <span className="text-[10px] text-white/50">{camera.zone}</span>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-// Offline Camera Placeholder
 function OfflineCameraPlaceholder({ camera }: { camera: CameraConfig }) {
   const capacity = camera.capacity || 50;
-  const areaDisplay = camera.area
-    ? `${camera.area} ${camera.areaUnit === 'sqft' ? 'ft²' : 'm²'}`
-    : 'Not configured';
-
   return (
-    <div className="relative bg-zinc-800 overflow-hidden aspect-4/3">
+    <div className="relative bg-zinc-900 overflow-hidden aspect-video border border-zinc-800 grayscale opacity-60">
       <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
-        <VideoOff className="w-10 h-10 mb-2 opacity-40" />
-        <span className="text-sm font-medium">{camera.name}</span>
-        <span className="text-xs mt-1 opacity-60">Offline</span>
-        <div className="mt-3 flex items-center gap-3 text-[10px] text-zinc-600">
-          <span className="flex items-center gap-1">
-            <Ruler className="w-3 h-3" />
-            {areaDisplay}
-          </span>
-          <span>|</span>
-          <span>Max: {capacity} people</span>
-        </div>
+        <VideoOff className="w-8 h-8 mb-2 opacity-30" />
+        <span className="text-[10px] font-black tracking-widest uppercase">{camera.name}</span>
+        <span className="text-[8px] mt-1 font-bold text-red-500/50 uppercase">Offline</span>
       </div>
-      <div className="absolute top-0 left-0 right-0 p-2 bg-linear-to-b from-black/60 to-transparent">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-white/50">{camera.name}</span>
-          <span className="text-[10px] text-zinc-500 bg-zinc-700 px-1.5 py-0.5 rounded">OFFLINE</span>
-        </div>
-      </div>
-      <div className="absolute bottom-0 left-0 right-0 p-2 bg-linear-to-t from-black/60 to-transparent">
-        <div className="flex items-center justify-between text-[10px] text-zinc-500">
-          <span>{camera.zone}</span>
-          <span className="text-amber-500/70">{camera.densityLevel || 'medium'} density</span>
+      <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+        <span className="text-[8px] text-white/20 font-bold uppercase">{camera.zone}</span>
+        <div className="flex items-center gap-1">
+          <Ruler className="w-2.5 h-2.5 text-white/20" />
+          <span className="text-[8px] text-white/20 font-mono">{camera.area || 0}m²</span>
         </div>
       </div>
     </div>

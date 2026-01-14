@@ -130,14 +130,24 @@ def format_alert_message(
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     if alert_type == "overcrowding":
+        occupancy_pct = int((people_count/max_capacity)*100) if max_capacity > 0 else 0
+        risk_level = "🔴 CRITICAL" if occupancy_pct >= 100 else "🟠 HIGH" if occupancy_pct >= 85 else "🟡 MODERATE"
+        mishap_warning = ""
+        if occupancy_pct >= 100:
+            mishap_warning = "\n\n⚠️ *MISHAP PREDICTION: STAMPEDE RISK HIGH*\n_Crowd crush conditions detected. Immediate evacuation or crowd dispersion required._"
+        elif occupancy_pct >= 85:
+            mishap_warning = "\n\n⚠️ *MISHAP PREDICTION: ELEVATED RISK*\n_High density may lead to crowd surge. Deploy crowd control._"
+        
         return (
             f"🚨 *CROWDKAVACH ALERT*\n\n"
             f"⚠️ *OVERCROWDING DETECTED*\n\n"
             f"📍 Zone: {zone}\n"
             f"👥 People Count: {people_count}\n"
             f"📊 Max Capacity: {max_capacity}\n"
-            f"📈 Occupancy: {int((people_count/max_capacity)*100) if max_capacity > 0 else 'N/A'}%\n\n"
-            f"🕐 Time: {timestamp}\n\n"
+            f"📈 Occupancy: {occupancy_pct}%\n"
+            f"🎯 Risk Level: {risk_level}\n\n"
+            f"🕐 Time: {timestamp}"
+            f"{mishap_warning}\n\n"
             f"_Immediate attention required. Consider crowd control measures._"
         )
     elif alert_type == "no_entry_violation":

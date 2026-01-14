@@ -3,9 +3,9 @@
     {
       "id": "cam-1",
       "name": "Camera 1",
-      "url": "http://10.51.172.85:4747/video",
+      "url": "http://10.51.172.105:4747/video",
       "zone": "Main Plaza",
-      "enabled": true,
+      "enabled": false,
       "area": 100.0,
       "areaUnit": "sqm",
       "densityLevel": "medium",
@@ -15,13 +15,13 @@
     {
       "id": "cam-2",
       "name": "Camera 2",
-      "url": "http://10.51.172.105:4747/video",
+      "url": "http://10.51.172.85:4747/video",
       "zone": "Entry Gate",
       "enabled": true,
       "area": 100.0,
       "areaUnit": "sqm",
       "densityLevel": "medium",
-      "capacity": 0,
+      "capacity": 5,
       "useManualCapacity": true
     }
   ]

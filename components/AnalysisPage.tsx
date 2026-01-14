@@ -91,47 +91,54 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
         { id: 'settings', icon: Settings, label: 'Settings', href: '/settings' },
     ];
 
-    // Generate analytics data
+    // Fetch real analytics data
     useEffect(() => {
-        const generateData = () => {
-            setAnalyticsData({
-                totalVisitors: Math.floor(Math.random() * 5000) + 8000,
-                peakHour: `${Math.floor(Math.random() * 12) + 10}:00`,
-                avgDwellTime: Math.floor(Math.random() * 30) + 15,
-                crowdDensity: Math.floor(Math.random() * 40) + 40,
-                incidentCount: Math.floor(Math.random() * 10) + 2,
-                safetyScore: Math.floor(Math.random() * 15) + 80
-            });
+        const fetchRealAnalytics = async () => {
+            try {
+                // 1. Fetch Global Data
+                const globalRes = await fetch(`${baseUrl}/analytics/global`);
+                if (globalRes.ok) {
+                    const gData = await globalRes.json();
 
-            const hours = [];
-            for (let i = 6; i <= 22; i++) {
-                hours.push({
-                    hour: `${i.toString().padStart(2, '0')}:00`,
-                    count: Math.floor(Math.random() * 500) + 200
-                });
+                    setAnalyticsData(prev => ({
+                        ...prev,
+                        totalVisitors: gData.total_visitors,
+                        peakHour: gData.peak_hour,
+                        crowdDensity: Math.round(gData.peak_count * 1.5), // Estimate based on peak
+                        incidentCount: gData.recent_alerts?.length || 0,
+                        safetyScore: 95 - (gData.recent_alerts?.filter((a: any) => a.type === 'emergency').length * 20 || 0)
+                    }));
+
+                    setHourlyData(gData.hourly_history.map((count: number, idx: number) => ({
+                        hour: `${idx.toString().padStart(2, '0')}:00`,
+                        count
+                    })));
+                }
+
+                // 2. Fetch Zone-wise Data
+                const allRes = await fetch(`${baseUrl}/analytics/all`);
+                if (allRes.ok) {
+                    const aData = await allRes.json();
+                    setZoneAnalysis(aData.cameras.map((cam: any) => ({
+                        zone: cam.zone,
+                        avgOccupancy: cam.people_count,
+                        peakOccupancy: cam.people_count, // Instantaneous for now
+                        riskLevel: cam.density > 70 ? 'high' : cam.density > 40 ? 'medium' : 'low',
+                        incidents: 0
+                    })));
+
+                    setTrends([
+                        { label: 'Visitor Count', value: aData.total_people_count, change: 0, trend: 'up' },
+                        { label: 'Active Cameras', value: aData.cameras.length, change: 0, trend: 'up' },
+                        { label: 'Safety Score', value: 98, change: 0, trend: 'up' },
+                        { label: 'Peak Hour', value: 0, change: 0, trend: 'up' } // Placeholder for chart
+                    ]);
+                }
+
+                setLastUpdated(new Date().toLocaleTimeString());
+            } catch (err) {
+                console.error('Failed to fetch real analytics:', err);
             }
-            setHourlyData(hours);
-
-            // Get unique zones from cameras or use defaults if none
-            const defaultZones = ['Main Plaza', 'Entry Gate', 'Exit Gate', 'Food Court', 'Stage Area', 'Parking', 'VIP Area'];
-            const zones = cameras.length > 0
-                ? Array.from(new Set(cameras.map(c => c.zone)))
-                : defaultZones;
-
-            setZoneAnalysis(zones.map(zone => ({
-                zone,
-                avgOccupancy: Math.floor(Math.random() * 60) + 20,
-                peakOccupancy: Math.floor(Math.random() * 40) + 60,
-                riskLevel: Math.random() > 0.7 ? 'high' : Math.random() > 0.4 ? 'medium' : 'low',
-                incidents: Math.floor(Math.random() * 5)
-            })));
-
-            setTrends([
-                { label: 'Visitor Count', value: 12450, change: 12.5, trend: 'up' },
-                { label: 'Avg Dwell Time', value: 24, change: -5.2, trend: 'down' },
-                { label: 'Peak Density', value: 78, change: 8.3, trend: 'up' },
-                { label: 'Incidents', value: 7, change: -15.0, trend: 'down' }
-            ]);
         };
 
         const fetchCameras = async () => {
@@ -147,12 +154,9 @@ export default function AnalysisPage({ user }: { user?: AppUser }) {
         };
 
         fetchCameras();
-        generateData();
-        setLastUpdated(new Date().toLocaleTimeString());
-        const interval = setInterval(() => {
-            generateData();
-            setLastUpdated(new Date().toLocaleTimeString());
-        }, 30000);
+        fetchRealAnalytics();
+
+        const interval = setInterval(fetchRealAnalytics, 15000); // Poll every 15s
         return () => clearInterval(interval);
     }, [selectedTimeRange, cameras.length]);
 
