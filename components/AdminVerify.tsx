@@ -6,7 +6,7 @@ import { Shield, Lock, AlertCircle, Sun, Moon } from 'lucide-react';
 import { useTheme } from '@/lib/ThemeContext';
 import Logo from '@/components/Logo';
 
-const ADMIN_PASSCODE = '231004';
+const ADMIN_PASSCODE = '123456';
 
 interface AdminVerifyProps {
     user: {

@@ -143,7 +143,7 @@ npm run dev
 ### Access the Application
 
 - **Dashboard**: http://localhost:3001/dashboard
-- **Default Passcode**: `231004`
+- **Default Passcode**: `123456`
 
 ---
 
