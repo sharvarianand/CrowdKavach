@@ -1,36 +1,235 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CrowdKavach 🛡️
 
-## Getting Started
+**Real-Time Crowd Monitoring & Safety Alert System**
 
-First, run the development server:
+CrowdKavach is an AI-powered crowd monitoring system that uses computer vision to detect crowd density, predict mishaps, and send real-time alerts to security personnel.
+
+## ✨ Features
+
+- 🎥 **Live Camera Monitoring** - Multi-camera support with MJPEG streaming
+- 🤖 **AI-Powered Detection** - YOLOv8 for accurate people counting
+- 📊 **Real-Time Analytics** - Live occupancy, peak hours, zone analysis
+- 🚨 **Smart Alerts** - WhatsApp notifications for overcrowding & emergencies
+- ⚠️ **Mishap Prediction** - Stampede risk warnings when crowd levels are critical
+- 🗺️ **Heat Map** - Visual crowd density representation
+- 📱 **Emergency Button** - One-click emergency alert system
+- 🔐 **Privacy Mode** - Optional face blurring for GDPR compliance
+- 📶 **Low Bandwidth Mode** - Data-only view without video streaming for slow connections
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Node.js 18+** or **Bun** (recommended)
+- **Python 3.10+**
+- **DroidCam** (for mobile phone camera prototype)
+- Twilio account (for WhatsApp alerts)
+
+### 1. Clone the Repository
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/sharvarianand/CrowdKavach.git
+cd CrowdKavach
 ```
 
-Open [http://localhost:3001](http://localhost:3001) with your browser to see the result.
+### 2. Install Frontend Dependencies
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+bun install
+# or
+npm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Setup Python Backend
 
-## Learn More
+```bash
+cd python-server
+python -m venv venv
 
-To learn more about Next.js, take a look at the following resources:
+# Windows
+.\venv\Scripts\activate
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Linux/Mac
+source venv/bin/activate
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+pip install -r requirements.txt
+```
 
-## Deploy on Vercel
+### 4. Configure Environment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Create `.env.local` in the root directory:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```env
+NEXT_PUBLIC_PYTHON_SERVER_URL=http://localhost:8000
+```
+
+---
+
+## 📱 DroidCam Setup (Prototype)
+
+For prototyping without IP cameras, use your smartphone as a camera:
+
+### Step 1: Install DroidCam
+
+1. Download **DroidCam** app on your phone (Android/iOS)
+2. Download **DroidCam Client** on your PC from [dev47apps.com](https://www.dev47apps.com/)
+
+### Step 2: Connect Your Phone
+
+1. Connect phone and PC to the **same WiFi network**
+2. Open DroidCam app on phone - note the **WiFi IP** (e.g., `192.168.1.100`)
+3. The video URL will be: `http://<phone-ip>:4747/video`
+
+### Step 3: Add Camera in CrowdKavach
+
+1. Start the application
+2. Go to **Settings** → **Camera Configuration**
+3. Click **Add Camera**
+4. Enter:
+   - **Name**: Your camera name (e.g., "Main Entrance")
+   - **URL**: `http://<phone-ip>:4747/video`
+   - **Zone**: Location name
+   - **Capacity**: Maximum allowed people (0 = restricted zone)
+
+---
+
+## 📲 WhatsApp Alerts Setup (Twilio)
+
+### Step 1: Create Twilio Account
+
+1. Go to [twilio.com/try-twilio](https://www.twilio.com/try-twilio)
+2. Create a free account and verify your phone number
+
+### Step 2: Setup WhatsApp Sandbox
+
+1. In Twilio Console, go to **Messaging** → **Try it out** → **Send a WhatsApp message**
+2. Follow the sandbox setup instructions
+3. Send the join code (e.g., "join hungry-cat") to **+1 415 523 8886** from your WhatsApp
+
+### Step 3: Configure in CrowdKavach
+
+1. Go to **Settings** → **Alert Configuration**
+2. Enter:
+   - **Your WhatsApp Number**: +91XXXXXXXXXX
+   - **Twilio Account SID**: (from Twilio Console)
+   - **Twilio Auth Token**: (from Twilio Console)
+3. Disable "Prototype Mode"
+4. Click **Test Alert** to verify
+
+---
+
+## 🖥️ Running the Application
+
+### Terminal 1: Backend Server
+
+```bash
+cd python-server
+.\venv\Scripts\activate  # Windows
+uvicorn yolo_bounding_boxes:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Terminal 2: Frontend
+
+```bash
+bun run dev
+# or
+npm run dev
+```
+
+### Access the Application
+
+- **Dashboard**: http://localhost:3001/dashboard
+- **Default Passcode**: `231004`
+
+---
+
+## 📁 Project Structure
+
+```
+CrowdKavach/
+├── app/                    # Next.js pages
+├── components/             # React components
+│   ├── DashboardUI.tsx     # Main dashboard
+│   ├── CameraGrid.tsx      # Live camera feeds
+│   ├── HeatMap.tsx         # Crowd heat map
+│   └── FloatingEmergencyButton.tsx
+├── python-server/          # Python backend
+│   ├── yolo_bounding_boxes.py  # Main server
+│   ├── twilio_alerts.py    # WhatsApp integration
+│   ├── cameras.json        # Camera configuration
+│   └── alert_config.json   # Alert settings
+└── lib/                    # Shared utilities
+```
+
+---
+
+## ⚙️ Configuration
+
+### Camera Settings (`cameras.json`)
+
+```json
+{
+  "cameras": [
+    {
+      "id": "cam-1",
+      "name": "Main Entrance",
+      "url": "http://192.168.1.100:4747/video",
+      "zone": "Zone A",
+      "enabled": true,
+      "capacity": 100
+    }
+  ]
+}
+```
+
+### Alert Settings (`alert_config.json`)
+
+```json
+{
+  "whatsappEnabled": true,
+  "whatsappNumber": "+919XXXXXXXXX",
+  "alertCooldownMinutes": 5,
+  "prototypeMode": false
+}
+```
+
+---
+
+## 🔔 Alert Types
+
+| Alert | Trigger | Action |
+|-------|---------|--------|
+| **Overcrowding** | People > Capacity | WhatsApp + Dashboard |
+| **Restricted Zone Breach** | People in zone with capacity=0 | WhatsApp + Dashboard |
+| **Emergency** | Manual button press | WhatsApp + Dashboard |
+| **Mishap Prediction** | Occupancy ≥85% | Warning in alert message |
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend**: Next.js 16, React, TailwindCSS
+- **Backend**: FastAPI, Python
+- **AI/ML**: YOLOv8 (Ultralytics), OpenCV
+- **Alerts**: Twilio WhatsApp API
+- **Deployment**: Vercel (frontend), Any Python host (backend)
+
+---
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+## 👥 Contributors
+
+- Sharvari Anand Bhondekar
+
+---
+
+## 🆘 Support
+
+For issues or feature requests, please open a GitHub issue.
