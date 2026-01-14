@@ -42,5 +42,16 @@
     "timestamp": "2026-01-14T21:10:01.347650",
     "whatsapp_sent": false,
     "acknowledged": false
+  },
+  {
+    "id": "alert-20260114212155-Entry-Gate",
+    "type": "no_entry_violation",
+    "zone": "Entry Gate",
+    "camera_id": "cam-2",
+    "people_count": 1,
+    "max_capacity": 0,
+    "timestamp": "2026-01-14T21:21:55.633410",
+    "whatsapp_sent": false,
+    "acknowledged": false
   }
 ]

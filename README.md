@@ -4,6 +4,8 @@
 
 CrowdKavach is an AI-powered crowd monitoring system that uses computer vision to detect crowd density, predict mishaps, and send real-time alerts to security personnel.
 
+🌐 **Live Demo**: [https://crowd-kavach.vercel.app](https://crowd-kavach.vercel.app)
+
 ## ✨ Features
 
 - 🎥 **Live Camera Monitoring** - Multi-camera support with MJPEG streaming

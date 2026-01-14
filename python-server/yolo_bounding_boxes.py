@@ -153,6 +153,11 @@ def capture_loop(camera_id: str):
                 camera_reconnect_events[camera_id].clear()
                 break
 
+            # Flush buffer by grabbing frames quickly without decoding
+            # This ensures we always get the LATEST frame, not buffered ones
+            for _ in range(3):
+                cap.grab()
+            
             ret, frame = cap.read()
             
             if ret:
