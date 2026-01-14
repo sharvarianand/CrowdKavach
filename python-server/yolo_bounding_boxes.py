@@ -130,15 +130,19 @@ def capture_loop(camera_id: str):
         print(f"[{camera_id}] Connecting to camera at {camera.url}...")
         cap = cv2.VideoCapture(camera.url)
         
+        # Optimize camera capture settings for low latency
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer for lowest latency
+        cap.set(cv2.CAP_PROP_FPS, 30)  # Request 30 FPS
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # Use MJPEG codec
+        
         if not cap.isOpened():
-            # Try without any backends if FFMPEG failed (implicitly tried above)
-            print(f"[{camera_id}] Failed to open camera, retrying in 5s...")
-            time.sleep(5)
+            print(f"[{camera_id}] Failed to open camera, retrying in 3s...")
+            time.sleep(3)
             continue
 
         print(f"[{camera_id}] Connected!")
         last_yolo_time = 0
-        yolo_interval = 0.4  # Run YOLO every 400ms for each camera
+        yolo_interval = 0.1  # Run YOLO every 100ms for real-time updates
 
         while cap.isOpened():
             if camera_stop_events.get(camera_id, threading.Event()).is_set():
@@ -159,20 +163,26 @@ def capture_loop(camera_id: str):
                 # Periodically run YOLO
                 current_time = time.time()
                 if current_time - last_yolo_time > yolo_interval:
-                    # Run YOLO in a way that doesn't block the capture too long
-                    # Accuracy: Use lower confidence for better human detection
-                    results = model(frame, conf=0.25, iou=0.5, classes=[0], verbose=False)
+                    # Run YOLO with optimized settings for human detection
+                    # - Higher confidence (0.4) to reduce false positives
+                    # - classes=[0] ensures only 'person' class is detected
+                    # - imgsz=480 for faster inference while maintaining accuracy
+                    results = model(frame, conf=0.4, iou=0.45, classes=[0], imgsz=480, verbose=False)
                     
                     detections = []
                     for result in results:
                         for box in result.boxes:
-                            if int(box.cls[0]) == 0:
+                            if int(box.cls[0]) == 0:  # Person class only
                                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                                 width = x2 - x1
                                 height = y2 - y1
+                                aspect_ratio = height / width if width > 0 else 0
                                 
-                                # Accept smaller detections for distant people
-                                if width > 15 and height > 30:
+                                # Human-specific filtering:
+                                # - Minimum size to avoid noise
+                                # - Aspect ratio 0.8-4.0 (humans are typically taller than wide)
+                                # - Higher confidence already filtered by YOLO
+                                if width > 20 and height > 40 and 0.8 <= aspect_ratio <= 4.0:
                                     detections.append({
                                         "x1": int(x1), "y1": int(y1), 
                                         "x2": int(x2), "y2": int(y2),
@@ -245,11 +255,11 @@ def capture_loop(camera_id: str):
                     print(f"[{camera_id}] Stream disconnected")
                     break
             
-            # Very small sleep to prevent 100% CPU usage in the capture thread
-            time.sleep(0.01)
+            # Minimal sleep - just enough to prevent 100% CPU
+            time.sleep(0.005)
 
         cap.release()
-        time.sleep(1)
+        time.sleep(0.5)  # Faster reconnection attempts
 
 
 def start_camera_thread(camera_id: str):
@@ -802,14 +812,16 @@ def generate_stream(camera_id: Optional[str] = None):
                     frame = camera_frames[target_camera].copy()
 
         if frame is None:
-            time.sleep(0.1)
+            time.sleep(0.02)
             continue
 
-        _, jpeg = cv2.imencode(".jpg", frame)
+        # Encode with balanced quality for speed
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]
+        _, jpeg = cv2.imencode(".jpg", frame, encode_params)
         yield (
             b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
         )
-        time.sleep(0.033)
+        time.sleep(0.025)  # ~40 FPS for smoother streaming
 
 
 @app.get("/stream")
@@ -837,7 +849,7 @@ def generate_stream_with_boxes(camera_id: Optional[str] = None):
                     frame = camera_frames[current_cid].copy()
 
         if frame is None:
-            time.sleep(0.1)
+            time.sleep(0.02)
             continue
 
         # Use cached detections
@@ -857,14 +869,14 @@ def generate_stream_with_boxes(camera_id: Optional[str] = None):
             2,
         )
 
-        # Encode with slightly lower quality for faster streaming
-        encode_params = [cv2.IMWRITE_JPEG_QUALITY, 65]
+        # Encode with balanced quality for smooth streaming
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, 70]
         _, jpeg = cv2.imencode(".jpg", frame, encode_params)
 
         yield (
             b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
         )
-        time.sleep(0.04)  # ~25 FPS
+        time.sleep(0.025)  # ~40 FPS for smoother streaming
 
 
 @app.get("/stream-with-boxes")

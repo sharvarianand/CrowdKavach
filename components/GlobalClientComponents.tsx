@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import FloatingEmergencyButton from '@/components/FloatingEmergencyButton';
 
@@ -13,9 +13,17 @@ const protectedPaths = ['/dashboard', '/settings', '/heatmap', '/analysis', '/re
 
 export default function GlobalClientComponents({ children }: GlobalClientComponentsProps) {
     const pathname = usePathname();
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-    // Only show emergency button on protected routes (after login)
-    const showEmergencyButton = protectedPaths.some(path => pathname?.startsWith(path));
+    useEffect(() => {
+        // Check if admin is verified (authenticated)
+        const adminVerified = sessionStorage.getItem('adminVerified') === 'true';
+        setIsAuthenticated(adminVerified);
+    }, [pathname]); // Re-check when pathname changes
+
+    // Only show emergency button on protected routes AND when authenticated
+    const isProtectedRoute = protectedPaths.some(path => pathname?.startsWith(path));
+    const showEmergencyButton = isProtectedRoute && isAuthenticated;
 
     return (
         <>

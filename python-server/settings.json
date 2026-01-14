@@ -1,6 +1,6 @@
 {
   "lowBandwidthMode": false,
-  "privacyMaskingEnabled": true,
+  "privacyMaskingEnabled": false,
   "autoRefreshInterval": 1000,
   "showDensityOverlay": true,
   "alertSoundEnabled": true,
