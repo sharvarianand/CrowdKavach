@@ -1,10 +1,10 @@
 {
-  "whatsappEnabled": true,
-  "whatsappNumber": "+919021240563",
+  "whatsappEnabled": false,
+  "whatsappNumber": "",
   "alertCooldownMinutes": 5,
-  "twilioAccountSid": "AC1c291aadfc057619a5a3b50c15049a38",
-  "twilioAuthToken": "29806695a3aa214d95b83a1aedc792bc",
+  "twilioAccountSid": "",
+  "twilioAuthToken": "",
   "twilioWhatsappNumber": "whatsapp:+14155238886",
-  "prototypeMode": false,
+  "prototypeMode": true,
   "emergencyContacts": []
 }

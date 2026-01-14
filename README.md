@@ -214,7 +214,37 @@ CrowdKavach/
 - **Backend**: FastAPI, Python
 - **AI/ML**: YOLOv8 (Ultralytics), OpenCV
 - **Alerts**: Twilio WhatsApp API
-- **Deployment**: Vercel (frontend), Any Python host (backend)
+- **Deployment**: Vercel (frontend), Hugging Face Spaces (backend)
+
+---
+
+## 🚀 Cloud Deployment
+
+### Frontend → Vercel
+
+1. Push your code to GitHub
+2. Go to [vercel.com](https://vercel.com) and import your repo
+3. Set environment variable:
+   ```
+   NEXT_PUBLIC_PYTHON_SERVER_URL=https://your-hf-space-url.hf.space
+   ```
+4. Deploy!
+
+### Backend → Hugging Face Spaces
+
+1. Create a new Space at [huggingface.co/spaces](https://huggingface.co/spaces)
+2. Choose **Docker** as the SDK
+3. Clone your Space repo locally
+4. Copy contents of `python-server/` to the Space
+5. Rename `HF_README.md` to `README.md`
+6. Push to deploy:
+   ```bash
+   git add .
+   git commit -m "Deploy CrowdKavach backend"
+   git push
+   ```
+
+**Note:** For camera streaming, cameras must be accessible from the HF Space (public IP or tunneled).
 
 ---
 

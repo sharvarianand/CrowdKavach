@@ -300,6 +300,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============== Health Check ==============
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint for Docker/HF Spaces"""
+    return {
+        "status": "healthy",
+        "cameras_configured": len(cameras),
+        "cameras_active": len([c for c in cameras.values() if c.enabled])
+    }
+
+
 # ============== Camera Management Endpoints ==============
 
 
