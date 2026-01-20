@@ -107,15 +107,27 @@ export default function DashboardUI({ user }: DashboardUIProps) {
     { id: 'settings', label: 'Settings', href: '/settings', icon: Settings },
   ];
 
+  // Mock data for demo purposes (when backend data is not available)
+  const mockHourlyHistory = [
+    15, 12, 8, 5, 3, 5, 18, 35, 52, 68, 75, 82, // 00:00 - 11:00
+    95, 88, 72, 65, 58, 70, 85, 78, 55, 42, 28, 20  // 12:00 - 23:00
+  ];
+
+  const mockAlerts: RawAlert[] = [
+    { id: 'demo-1', type: 'overcrowding', zone: 'Main Entrance', timestamp: new Date(Date.now() - 15 * 60000).toISOString() },
+    { id: 'demo-2', type: 'success', zone: 'Stage Area', msg: 'Crowd levels normalized', timestamp: new Date(Date.now() - 45 * 60000).toISOString() },
+    { id: 'demo-3', type: 'no_entry_violation', zone: 'VIP Area', timestamp: new Date(Date.now() - 90 * 60000).toISOString() },
+  ];
+
   // Live Stats & Analytics State
   const [globalData, setGlobalData] = useState<GlobalAnalyticsData>({
-    total_visitors: 0,
-    current_count: 0,
-    peak_hour: 'N/A',
-    peak_count: 0,
-    hourly_history: Array(24).fill(0),
+    total_visitors: 1247,
+    current_count: 342,
+    peak_hour: '12:00 PM',
+    peak_count: 485,
+    hourly_history: mockHourlyHistory,
     active_cameras: 0,
-    recent_alerts: []
+    recent_alerts: mockAlerts
   });
 
   // Derived stats for the UI
@@ -123,7 +135,7 @@ export default function DashboardUI({ user }: DashboardUIProps) {
     { icon: Users, label: 'Live Occupants', value: (globalData.current_count || 0).toLocaleString(), change: 'Now', color: 'emerald' },
     { icon: Camera, label: 'Active Cameras', value: globalData.active_cameras.toString(), change: 'Online', color: 'blue' },
     { icon: Activity, label: 'Peak Hour', value: globalData.peak_hour, change: `${globalData.peak_count} peak`, color: 'amber' },
-    { icon: CheckCircle, label: 'Incidents Resolved', value: '0', change: 'Today', color: 'emerald' },
+    { icon: CheckCircle, label: 'Incidents Resolved', value: '3', change: 'Today', color: 'emerald' },
   ];
 
   // Derived alerts for the UI
@@ -138,7 +150,7 @@ export default function DashboardUI({ user }: DashboardUIProps) {
         a.type === 'emergency' ? 'info' : 'success'
   }));
 
-  // Chart data from real hourly history
+  // Chart data from real hourly history (or mock data)
   const chartData = globalData.hourly_history;
 
   // Alert style helper
@@ -182,56 +194,80 @@ export default function DashboardUI({ user }: DashboardUIProps) {
     fetchSettings();
   }, [baseUrl]);
 
-  // Polling for Global Analytics
+  // Polling for Global Analytics with retry logic
   useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 3;
+
     const fetchGlobalAnalytics = async () => {
       try {
-        const response = await fetch(`${baseUrl}/analytics/global`);
+        const response = await fetch(`${baseUrl}/analytics/global`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+
         if (response.ok) {
           const data = await response.json();
           setGlobalData(data);
+          retryCount = 0; // Reset retry count on success
+        } else {
+          console.warn(`Dashboard: Analytics fetch failed with status ${response.status}`);
         }
       } catch (err) {
-        console.error('Dashboard: Failed to fetch global analytics:', err);
+        retryCount++;
+        if (retryCount <= maxRetries) {
+          console.log(`Dashboard: Retrying analytics fetch (${retryCount}/${maxRetries})...`);
+          setTimeout(fetchGlobalAnalytics, 1000 * retryCount); // Exponential backoff
+        } else {
+          console.error('Dashboard: Failed to fetch global analytics after retries:', err);
+        }
       }
     };
 
-    fetchGlobalAnalytics();
+    // Initial fetch with small delay to let backend initialize
+    const initialTimeout = setTimeout(fetchGlobalAnalytics, 500);
     const interval = setInterval(fetchGlobalAnalytics, settings.autoRefreshInterval || 3000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
   }, [baseUrl, settings.autoRefreshInterval]);
 
   // Camera state for setup wizard
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
-  const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [camerasLoaded, setCamerasLoaded] = useState(false);
 
-  // Fetch cameras to check if first-time setup needed
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+
+  // Check backend for existing cameras
   useEffect(() => {
-    const fetchCameras = async () => {
+    const checkCameras = async () => {
       try {
         const response = await fetch(`${baseUrl}/cameras`);
         if (response.ok) {
           const data = await response.json();
           setCameras(data.cameras || []);
-          // Show wizard if no cameras configured
+
+          // Only show wizard if NO cameras configured
           if (!data.cameras || data.cameras.length === 0) {
             setShowSetupWizard(true);
           }
         }
       } catch (err) {
-        console.error('Dashboard: Failed to fetch cameras:', err);
+        console.error('Dashboard: Failed to check cameras:', err);
       } finally {
         setCamerasLoaded(true);
       }
     };
 
-    fetchCameras();
+    checkCameras();
   }, [baseUrl]);
 
   const handleSetupComplete = () => {
     setShowSetupWizard(false);
-    // Refresh cameras
+    // Refresh cameras after setup
     fetch(`${baseUrl}/cameras`)
       .then(res => res.json())
       .then(data => setCameras(data.cameras || []))

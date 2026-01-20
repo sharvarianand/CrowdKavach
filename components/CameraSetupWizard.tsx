@@ -116,7 +116,18 @@ export default function CameraSetupWizard({ onComplete, baseUrl }: CameraSetupWi
         setError(null);
 
         try {
-            // Add each camera to the backend
+            // First, fetch existing cameras and delete them all
+            const existingResponse = await fetch(`${baseUrl}/cameras`);
+            if (existingResponse.ok) {
+                const { cameras: existingCameras } = await existingResponse.json();
+                for (const cam of existingCameras) {
+                    await fetch(`${baseUrl}/cameras/${cam.id}`, {
+                        method: 'DELETE'
+                    });
+                }
+            }
+
+            // Now add the new cameras
             for (const camera of cameras) {
                 let url = camera.url.trim();
 

@@ -130,10 +130,18 @@ def capture_loop(camera_id: str):
         print(f"[{camera_id}] Connecting to camera at {camera.url}...")
         cap = cv2.VideoCapture(camera.url)
         
-        # Optimize camera capture settings for low latency
+        # Optimize camera capture settings for low latency and better focus
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer for lowest latency
         cap.set(cv2.CAP_PROP_FPS, 30)  # Request 30 FPS
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # Use MJPEG codec
+        
+        # Try to enable autofocus for better clarity
+        try:
+            cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)  # Enable autofocus
+            cap.set(cv2.CAP_PROP_FOCUS, 0)  # Auto focus mode
+            cap.set(cv2.CAP_PROP_SHARPNESS, 100)  # Increase sharpness for clarity
+        except:
+            pass  # Some cameras don't support these properties
         
         if not cap.isOpened():
             print(f"[{camera_id}] Failed to open camera, retrying in 3s...")
@@ -155,7 +163,8 @@ def capture_loop(camera_id: str):
 
             # Flush buffer by grabbing frames quickly without decoding
             # This ensures we always get the LATEST frame, not buffered ones
-            for _ in range(3):
+            # Flush more aggressively for better real-time sync
+            for _ in range(5):  # Increased from 3 to 5 for better sync
                 cap.grab()
             
             ret, frame = cap.read()
@@ -165,16 +174,37 @@ def capture_loop(camera_id: str):
                 with camera_locks.get(camera_id, threading.Lock()):
                     camera_frames[camera_id] = frame
                 
-                # Periodically run YOLO
+                # Periodically run detection
                 current_time = time.time()
                 if current_time - last_yolo_time > yolo_interval:
-                    # Run YOLO with optimized settings for human detection
-                    # - Higher confidence (0.4) to reduce false positives
-                    # - classes=[0] ensures only 'person' class is detected
-                    # - imgsz=480 for faster inference while maintaining accuracy
-                    results = model(frame, conf=0.4, iou=0.45, classes=[0], imgsz=480, verbose=False)
-                    
                     detections = []
+                    
+                    # Method 1: Face/Head Detection (Primary for counting heads)
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    faces = face_cascade.detectMultiScale(
+                        gray,
+                        scaleFactor=1.1,
+                        minNeighbors=5,
+                        minSize=(30, 30),
+                        flags=cv2.CASCADE_SCALE_IMAGE
+                    )
+                    
+                    # Convert face detections to our format
+                    face_detections = []
+                    for (x, y, w, h) in faces:
+                        face_detections.append({
+                            "x1": int(x), "y1": int(y),
+                            "x2": int(x + w), "y2": int(y + h),
+                            "conf": 0.95,  # Face detection confidence
+                            "type": "face"
+                        })
+                    
+                    # Method 2: YOLO Person Detection (Backup/Validation)
+                    # BALANCED PRECISION - Detect clear humans, filter bags/laptops
+                    # Confidence 0.55 = Good balance between accuracy and recall
+                    results = model(frame, conf=0.55, iou=0.45, classes=[0], imgsz=480, verbose=False)
+                    
+                    yolo_detections = []
                     for result in results:
                         for box in result.boxes:
                             if int(box.cls[0]) == 0:  # Person class only
@@ -182,20 +212,55 @@ def capture_loop(camera_id: str):
                                 width = x2 - x1
                                 height = y2 - y1
                                 aspect_ratio = height / width if width > 0 else 0
+                                area = width * height
                                 
-                                # Human-specific filtering:
-                                # - Minimum size to avoid noise
-                                # - Aspect ratio 0.8-4.0 (humans are typically taller than wide)
-                                # - Higher confidence already filtered by YOLO
-                                if width > 20 and height > 40 and 0.8 <= aspect_ratio <= 4.0:
-                                    detections.append({
-                                        "x1": int(x1), "y1": int(y1), 
+                                # BALANCED filtering - Humans yes, bags/laptops no:
+                                # 1. Moderate size (40x80) - catches humans, filters small objects
+                                # 2. Reasonable aspect ratio (1.6-4.0) - various human postures
+                                # 3. Decent area (3500px) - filters tiny objects
+                                # 4. Height validation (height > 1.6x width) - generally vertical
+                                # 5. YOLO confidence 0.55+ - reliable detections
+                                if (width > 40 and height > 80 and 
+                                    1.6 <= aspect_ratio <= 4.0 and
+                                    area > 3500 and
+                                    height > width * 1.6):  # Height at least 1.6x width
+                                    yolo_detections.append({
+                                        "x1": int(x1), "y1": int(y1),
                                         "x2": int(x2), "y2": int(y2),
-                                        "conf": float(box.conf[0])
+                                        "conf": float(box.conf[0]),
+                                        "type": "person"
                                     })
                     
+                    # Combine detections with deduplication
+                    # Priority: Use faces when detected, supplement with YOLO for people without visible faces
+                    all_detections = face_detections.copy()
+                    
+                    # Add YOLO detections that don't overlap significantly with face detections
+                    for yolo_det in yolo_detections:
+                        # Check if this YOLO detection has a corresponding face detection
+                        has_face = False
+                        for face_det in face_detections:
+                            # Check if face is within upper portion of YOLO person box
+                            face_center_x = (face_det["x1"] + face_det["x2"]) / 2
+                            face_center_y = (face_det["y1"] + face_det["y2"]) / 2
+                            
+                            # If face is inside person box, they're the same person
+                            if (yolo_det["x1"] <= face_center_x <= yolo_det["x2"] and
+                                yolo_det["y1"] <= face_center_y <= yolo_det["y2"]):
+                                has_face = True
+                                break
+                        
+                        # Only add YOLO detection if no face found (e.g., back of head, profile)
+                        if not has_face:
+                            all_detections.append(yolo_det)
+                    
+                    # Use the combined detections
+                    detections = all_detections
+                    
                     if detections:
-                        print(f"[{camera_id}] Detected {len(detections)} people")
+                        face_count = len([d for d in detections if d.get("type") == "face"])
+                        person_count = len([d for d in detections if d.get("type") == "person"])
+                        print(f"[{camera_id}] Detected {len(detections)} people ({face_count} faces, {person_count} bodies)")
                     
                     camera_detections[camera_id] = detections
                     camera_last_detection_time[camera_id] = current_time
