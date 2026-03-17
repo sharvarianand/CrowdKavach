@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
+import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/lib/ThemeContext";
 import GlobalClientComponents from "@/components/GlobalClientComponents";
 
@@ -18,35 +18,34 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var theme = localStorage.getItem('crowdkavach-theme');
-                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                    document.documentElement.classList.add('dark');
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                  }
-                } catch (e) {}
-              })();
-            `,
-          }}
-        />
-      </head>
-      <body className={`${inter.className} bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 antialiased transition-colors duration-200`}>
-        <AuthKitProvider>
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                (function() {
+                  try {
+                    var theme = localStorage.getItem('crowdkavach-theme');
+                    if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                      document.documentElement.classList.add('dark');
+                    } else {
+                      document.documentElement.classList.remove('dark');
+                    }
+                  } catch (e) {}
+                })();
+              `,
+            }}
+          />
+        </head>
+        <body className={`${inter.className} bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 antialiased transition-colors duration-200`}>
           <ThemeProvider>
             <GlobalClientComponents>
               {children}
             </GlobalClientComponents>
           </ThemeProvider>
-        </AuthKitProvider>
-      </body>
-    </html>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
-

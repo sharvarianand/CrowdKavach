@@ -50,7 +50,7 @@ export default function PrivacyPage() {
             </p>
             <h3 className="text-xl font-medium text-zinc-800 dark:text-zinc-200 mb-3">2.2 Account Information</h3>
             <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-              When you create an account, we collect your email address, name, and authentication credentials through our secure authentication provider (WorkOS).
+              When you create an account, we collect your email address, name, and authentication credentials through our secure authentication provider (Clerk).
             </p>
             <h3 className="text-xl font-medium text-zinc-800 dark:text-zinc-200 mb-3">2.3 Usage Data</h3>
             <p className="text-zinc-600 dark:text-zinc-400 mb-4">

@@ -4,6 +4,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
+import { useClerk } from '@clerk/nextjs';
 import {
     Home,
     Map,
@@ -70,6 +71,7 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
     const { theme, toggleTheme } = useTheme();
     const pathname = usePathname();
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const { signOut } = useClerk();
     const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [filterType, setFilterType] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
     const [filterStatus, setFilterStatus] = useState<'all' | 'resolved' | 'pending' | 'investigating'>('all');
@@ -348,7 +350,7 @@ export default function ReportsPage({ user }: { user?: AppUser }) {
                                         onClick={async () => {
                                             localStorage.removeItem('crowdkavach_admin_verified');
                                             localStorage.removeItem('crowdkavach_admin_verify_time');
-                                            try { await fetch('/api/auth/logout'); } catch { }
+                                            await signOut();
                                             router.push('/');
                                         }}
                                         className="flex items-center gap-2 px-4 py-2 text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm w-full text-left"

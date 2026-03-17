@@ -1,8 +1,12 @@
-import { getSignInUrl } from '@workos-inc/authkit-nextjs';
+import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 
-export const GET = async () => {
-  const signInUrl = await getSignInUrl();
-
-  return redirect(signInUrl);
-};
+export async function GET() {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    redirect('/sign-in');
+  }
+  
+  redirect('/dashboard');
+}

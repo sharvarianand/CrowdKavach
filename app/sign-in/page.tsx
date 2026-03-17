@@ -1,6 +1,6 @@
 import { SignIn } from '@clerk/nextjs';
 
-export default function LoginPage() {
+export default function SignInPage() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center p-6 transition-colors duration-200">
       <SignIn appearance={{

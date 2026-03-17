@@ -1,5 +1,9 @@
-import { signOut } from '@workos-inc/authkit-nextjs';
+import { redirect } from 'next/navigation';
 
 export async function GET() {
-  return signOut({ returnTo: '/' });
+  redirect('/sign-in');
+}
+
+export async function POST() {
+  redirect('/sign-in');
 }
